@@ -1,13 +1,32 @@
-def layout_slides(plan: dict, ds: dict) -> dict:
-    slides = []
+def layout_slides(plan: dict, ds: dict, mode: str = "dense") -> dict:
+    """
+    mode: "dense" | "airy" | "data"
+    """
+    if mode == "dense":
+        font_multiplier = 0.85
+        padding_multiplier = 0.8
+        max_bullets = 6
+    elif mode == "airy":
+        font_multiplier = 1.3
+        padding_multiplier = 1.6
+        max_bullets = 3
+    elif mode == "data":
+        font_multiplier = 1.0
+        padding_multiplier = 1.0
+        max_bullets = 8
+    else:
+        font_multiplier = 1.0
+        padding_multiplier = 1.0
+        max_bullets = 6
     
+    slides = []
     grid = ds.get("grid", {})
     safe_area = grid.get("safe_area", {})
     default_x = safe_area.get("left_emu", 457200)
     default_y = safe_area.get("top_emu", 685800)
     slide_width = ds["meta"]["slide_size"]["width_emu"]
     default_w = slide_width - default_x - safe_area.get("right_emu", 457200)
-    default_h = 1143000
+    default_h = int(1143000 * padding_multiplier)
     
     for i, spec in enumerate(plan["slides"], start=1):
         pattern_id = spec["pattern_id"]
@@ -19,24 +38,22 @@ def layout_slides(plan: dict, ds: dict) -> dict:
         for ph in pattern.get("placeholders", []):
             role = ph["role"]
             
-            # Пропускаем служебные плейсхолдеры
             if role in ("date", "footer", "slide_number"):
                 continue
             
-            # Текст по роли
             if role in ("slide_title", "section_title"):
                 text = spec.get("title", "")
             elif role == "slide_subtitle":
                 text = spec.get("subtitle", "")
             elif role == "bullet":
-                text = "\n".join(spec.get("bullets", []))
+                bullets = spec.get("bullets", [])[:max_bullets]
+                text = "\n".join(bullets)
             else:
                 text = ""
             
             if not text:
                 continue
             
-            # Координаты из position, если есть
             pos = ph.get("position")
             if pos:
                 bbox = {
@@ -52,9 +69,8 @@ def layout_slides(plan: dict, ds: dict) -> dict:
                     "w_emu": default_w,
                     "h_emu": default_h,
                 }
-                y_offset += default_h + 228600
+                y_offset += default_h + int(228600 * padding_multiplier)
             
-            # Стиль
             role_key = ds["typography"]["roles"].get(role, "body")
             scale = ds["typography"]["scale"].get(role_key, {"size_pt": 16, "weight": 400})
             color = ds["palette"]["colors"].get("text_primary", {"hex": "#1A1A1A"})["hex"]
@@ -68,7 +84,7 @@ def layout_slides(plan: dict, ds: dict) -> dict:
                 "text": text,
                 "style": {
                     "font": font,
-                    "size_pt": scale["size_pt"],
+                    "size_pt": int(scale["size_pt"] * font_multiplier),
                     "color": color,
                     "weight": scale.get("weight", 400),
                 },
