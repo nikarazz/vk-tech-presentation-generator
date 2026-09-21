@@ -35,6 +35,7 @@ def layout_slides(plan: dict, ds: dict, mode: str = "dense") -> dict:
         elements = []
         y_offset = default_y
         
+        # Текстовые плейсхолдеры
         for ph in pattern.get("placeholders", []):
             role = ph["role"]
             
@@ -89,6 +90,38 @@ def layout_slides(plan: dict, ds: dict, mode: str = "dense") -> dict:
                     "weight": scale.get("weight", 400),
                 },
             })
+        
+        # График
+        if spec.get("chart"):
+            elements.append({
+                "element_id": f"chart_{i}",
+                "type": "chart",
+                "role": "chart",
+                "bbox": {
+                    "x_emu": default_x,
+                    "y_emu": y_offset,
+                    "w_emu": default_w,
+                    "h_emu": 3429000,
+                },
+                "spec": spec["chart"],
+            })
+            y_offset += 3429000 + 228600
+        
+        # Таблица
+        if spec.get("table"):
+            elements.append({
+                "element_id": f"table_{i}",
+                "type": "table",
+                "role": "table",
+                "bbox": {
+                    "x_emu": default_x,
+                    "y_emu": y_offset,
+                    "w_emu": default_w,
+                    "h_emu": 2286000,
+                },
+                "spec": spec["table"],
+            })
+            y_offset += 2286000 + 228600
         
         slides.append({
             "slide_id": i,
