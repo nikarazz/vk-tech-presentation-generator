@@ -68,3 +68,12 @@ def test_parse_template():
     assert len(ds["patterns"]) > 0
     assert ds["meta"]["slide_count"] > 0
     assert len(ds["meta"]["errors"]) == 0
+
+
+def test_broken_template():
+    """Парсер не падает на сломанном шаблоне (без theme)."""
+    ds = parse_template("data/templates/broken.pptx")
+    assert ds is not None
+    assert "meta" in ds
+    assert ds["meta"]["confidence"] >= 0
+    assert ds["palette"]["colors"]["primary"]["hex"] == "#0077FF"

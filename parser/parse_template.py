@@ -1,12 +1,5 @@
 """
 Главная функция парсера.
-
-Собирает всё:
-  - theme, master, layouts, slides
-  - grid, patterns, constraints
-
-Возвращает DesignSystem.
-Устойчив к незнакомым шаблонам: при ошибке понижает confidence.
 """
 import logging
 from parser.theme_parser import parse_theme
@@ -16,11 +9,11 @@ from parser.slide_parser import parse_slides
 from parser.grid_extractor import extract_grid
 from parser.pattern_clusterer import cluster_patterns, compute_pattern_constraints
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 def parse_template(pptx_path: str) -> dict:
-    """Парсит .pptx и возвращает DesignSystem. Устойчив к ошибкам."""
     errors = []
 
     try:
@@ -66,7 +59,7 @@ def parse_template(pptx_path: str) -> dict:
         patterns = {}
         errors.append("patterns")
 
-    ds = {
+    return {
         "version": "1.0",
         "meta": {
             "source_file": pptx_path,
@@ -94,11 +87,15 @@ def parse_template(pptx_path: str) -> dict:
         },
     }
 
-    return ds
-
 
 def _theme_to_color_tokens(theme: dict) -> dict:
     clr = theme.get("clrScheme", {})
+    if not clr:
+        clr = {
+            "dk1": "#000000", "lt1": "#FFFFFF",
+            "accent1": "#0077FF", "accent2": "#001A33",
+            "accent3": "#FF3D00",
+        }
     return {
         "primary": {"hex": clr.get("accent1", "#0077FF"), "role": "brand", "scheme_ref": "accent1"},
         "secondary": {"hex": clr.get("accent2", "#001A33"), "role": "brand", "scheme_ref": "accent2"},
