@@ -5,10 +5,10 @@ import os
 def plan_content(brief: str, content_pack: dict, ds: dict) -> dict:
     """
     Заглушка Content Planner.
-    Возвращает мок-план из 4 слайдов.
+    Возвращает мок-план из 4 слайдов с большим количеством буллетов,
+    чтобы разница между вариантами была заметна.
     """
     patterns = list(ds.get("patterns", {}).keys())
-    
     title_pattern = "title" if "title" in patterns else patterns[0] if patterns else "title"
     content_pattern = "content_bullets" if "content_bullets" in patterns else patterns[0] if patterns else "content_bullets"
     closing_pattern = "title_only" if "title_only" in patterns else patterns[-1] if patterns else "title_only"
@@ -17,14 +17,22 @@ def plan_content(brief: str, content_pack: dict, ds: dict) -> dict:
         "slides": [
             {"pattern_id": title_pattern, "title": "Тёмная тема", "subtitle": "Фича Q1 2026"},
             {"pattern_id": content_pattern, "title": "Проблема", "bullets": [
-                "Нагрузка на глаза",
-                "Яркий экран ночью",
-                "Жалобы пользователей",
+                "Нагрузка на глаза при ярком экране",
+                "Яркий экран мешает ночью",
+                "Жалобы пользователей растут",
+                "Пик использования — вечер",
+                "Мобильные устройства чаще",
+                "Долгое чтение утомляет",
+                "Отсутствие выбора",
+                "Нет настройки темы",
             ]},
             {"pattern_id": content_pattern, "title": "Решение", "bullets": [
-                "Тёмная тема",
-                "Автопереключение",
+                "Тёмная тема в приложении",
+                "40% пользователей включили за месяц",
+                "Автопереключение по времени",
                 "Настройка в профиле",
+                "Экономия батареи на 15%",
+                "Снижение нагрузки на глаза",
             ]},
             {"pattern_id": closing_pattern, "title": "Спасибо"},
         ]
