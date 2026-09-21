@@ -1,14 +1,35 @@
 from pptx import Presentation as PptxPresentation
 from pptx.util import Emu, Pt
+from pptx.dml.color import RGBColor
 
 from generation.chart_builder import build_chart
 from generation.table_builder import build_table
 
 
+def _apply_style_to_frame(text_frame, style: dict):
+    """Применяет стиль (шрифт, размер, цвет, жирность) ко всем run'ам."""
+    font_name = style.get("font", "Arial")
+    font_size = style.get("size_pt", 16)
+    color_hex = style.get("color", "#1A1A1A").lstrip("#")
+    weight = style.get("weight", 400)
+    
+    try:
+        rgb = RGBColor.from_string(color_hex)
+    except Exception:
+        rgb = RGBColor(0x1A, 0x1A, 0x1A)
+    
+    for para in text_frame.paragraphs:
+        for run in para.runs:
+            run.font.name = font_name
+            run.font.size = Pt(font_size)
+            run.font.bold = weight >= 700
+            run.font.color.rgb = rgb
+
+
 def export_pptx(pres: dict, ds: dict, template_path: str, output_path: str) -> None:
     prs = PptxPresentation(template_path)
     
-    # Удалить все существующие слайды из пакета
+    # Удалить все существующие слайды
     xml_slides = prs.slides._sldIdLst
     slides = list(xml_slides)
     for sld in slides:
@@ -27,34 +48,37 @@ def export_pptx(pres: dict, ds: dict, template_path: str, output_path: str) -> N
         layout_idx = layout_by_ref.get(layout_ref, 6)
         slide = prs.slides.add_slide(prs.slide_layouts[layout_idx])
         
-        # Удалить плейсхолдеры, чтобы не было «Заголовок слайда»
-        for shape in list(slide.shapes):
-            if shape.is_placeholder:
-                sp = shape._element
-                sp.getparent().remove(sp)
+        # Собираем плейсхолдеры по idx
+        available_phs = {}
+        for ph in slide.placeholders:
+            available_phs[ph.placeholder_format.idx] = ph
         
-        # Добавить элементы
+        # Заполняем элементы
         for el in slide_data["elements"]:
-            bbox = el["bbox"]
-            
             if el["type"] == "text":
-                txBox = slide.shapes.add_textbox(
-                    Emu(bbox["x_emu"]), Emu(bbox["y_emu"]),
-                    Emu(bbox["w_emu"]), Emu(bbox["h_emu"]),
-                )
-                tf = txBox.text_frame
-                tf.word_wrap = True
-                tf.text = el["text"]
-                for para in tf.paragraphs:
-                    for run in para.runs:
-                        run.font.size = Pt(el["style"]["size_pt"])
-                        run.font.bold = el["style"].get("weight", 400) >= 700
+                ph_idx = el.get("placeholder_idx")
+                
+                if ph_idx is not None and ph_idx in available_phs:
+                    ph = available_phs[ph_idx]
+                    ph.text = el["text"]
+                    _apply_style_to_frame(ph.text_frame, el.get("style", {}))
+                else:
+                    # Fallback: text box
+                    bbox = el["bbox"]
+                    txBox = slide.shapes.add_textbox(
+                        Emu(bbox["x_emu"]), Emu(bbox["y_emu"]),
+                        Emu(bbox["w_emu"]), Emu(bbox["h_emu"]),
+                    )
+                    tf = txBox.text_frame
+                    tf.word_wrap = True
+                    tf.text = el["text"]
+                    _apply_style_to_frame(tf, el.get("style", {}))
             
             elif el["type"] == "chart":
-                build_chart(slide, el["spec"], ds, bbox)
+                build_chart(slide, el["spec"], ds, el["bbox"])
             
             elif el["type"] == "table":
-                build_table(slide, el["spec"], ds, bbox)
+                build_table(slide, el["spec"], ds, el["bbox"])
     
     prs.save(output_path)
     print(f"[B] Saved to {output_path}")

@@ -1,7 +1,4 @@
 def layout_slides(plan: dict, ds: dict, mode: str = "dense") -> dict:
-    """
-    mode: "dense" | "airy" | "data"
-    """
     if mode == "dense":
         font_multiplier = 0.85
         padding_multiplier = 0.8
@@ -35,7 +32,6 @@ def layout_slides(plan: dict, ds: dict, mode: str = "dense") -> dict:
         elements = []
         y_offset = default_y
         
-        # Текстовые плейсхолдеры
         for ph in pattern.get("placeholders", []):
             role = ph["role"]
             
@@ -81,6 +77,7 @@ def layout_slides(plan: dict, ds: dict, mode: str = "dense") -> dict:
                 "element_id": f"{role}_{i}",
                 "type": "text",
                 "role": role,
+                "placeholder_idx": ph.get("idx"),  # ← ключевое
                 "bbox": bbox,
                 "text": text,
                 "style": {
