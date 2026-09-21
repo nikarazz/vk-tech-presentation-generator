@@ -1,11 +1,6 @@
 """
 Парсер slides/slideN.xml — конкретных слайдов презентации.
 
-Извлекает:
-  - layout_ref — на каком layout собран слайд
-  - элементы: тексты, картинки, таблицы, графики
-  - для каждого элемента: bbox, стиль, содержимое
-
 Использует резолвер наследования для получения финальных стилей.
 """
 from lxml import etree
@@ -33,11 +28,7 @@ NS = {
 
 
 def parse_slides(pptx_path: str, theme: dict) -> list[dict]:
-    """
-    Парсит все слайды из .pptx.
-
-    Возвращает список слайдов с элементами и стилями.
-    """
+    """Парсит все слайды из .pptx."""
     slides = []
 
     with ZipFile(pptx_path) as z:
@@ -75,11 +66,7 @@ def _slide_sort_key(path: str) -> int:
 
 
 def _find_layout_ref(pptx_path: str, slide_id: int) -> str:
-    """
-    Находит layout_ref для слайда через _rels.
-
-    Возвращает 'slideLayoutN.xml' или 'unknown'.
-    """
+    """Находит layout_ref для слайда через _rels."""
     with ZipFile(pptx_path) as z:
         rels_path = f"ppt/slides/_rels/slide{slide_id}.xml.rels"
         if rels_path not in z.namelist():
@@ -92,14 +79,13 @@ def _find_layout_ref(pptx_path: str, slide_id: int) -> str:
             rel_type = rel.get('Type', '')
             if rel_type.endswith('/slideLayout'):
                 target = rel.get('Target', '')
-                # '../slideLayouts/slideLayout1.xml' → 'slideLayout1.xml'
                 return target.split('/')[-1]
 
     return "unknown"
 
 
 def _parse_elements(root: etree._Element, chain: list, theme: dict) -> list[dict]:
-    """Извлекает элементы из слайда с использованием цепочки наследования."""
+    """Извлекает элементы из слайда."""
     sp_tree = root.find('.//p:cSld/p:spTree', NS)
     if sp_tree is None:
         return []
@@ -177,12 +163,10 @@ def _extract_text(sp: etree._Element) -> str:
 
 def _extract_style(sp: etree._Element, chain: list, theme: dict) -> dict:
     """Извлекает стиль с использованием цепочки наследования."""
-    # Локальный резолв (внутри шейпа)
     color, alpha = resolve_color(sp, theme)
     size = resolve_font_size(sp)
     font = resolve_font_family(sp, theme)
 
-    # Если не нашли локально — идём по цепочке
     if color is None:
         color, alpha = resolve_color_from_chain(chain, theme)
     if size is None:

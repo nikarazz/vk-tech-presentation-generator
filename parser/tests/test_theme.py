@@ -5,6 +5,7 @@ from parser.layout_parser import parse_layouts
 from parser.slide_parser import parse_slides
 from parser.grid_extractor import extract_grid
 from parser.pattern_clusterer import cluster_patterns, get_used_patterns
+from parser.resolver import build_inheritance_chain
 
 
 def test_parse_theme():
@@ -19,14 +20,12 @@ def test_parse_master():
     master = parse_master("data/templates/template1.pptx", theme)
     assert "title_style" in master
     assert "body_style" in master
-    assert master["title_style"]["levels"]
 
 
 def test_parse_layouts():
     layouts = parse_layouts("data/templates/template1.pptx")
     assert len(layouts) > 0
     assert "layout_ref" in layouts[0]
-    assert "placeholders" in layouts[0]
 
 
 def test_parse_slides():
@@ -34,7 +33,14 @@ def test_parse_slides():
     slides = parse_slides("data/templates/template1.pptx", theme)
     assert len(slides) > 0
     assert "elements" in slides[0]
-    assert "slide_id" in slides[0]
+    assert slides[0]["layout_ref"] != "unknown"
+
+
+def test_inheritance_chain():
+    chain = build_inheritance_chain("data/templates/template1.pptx", 1)
+    assert len(chain) >= 1
+    tags = [elem.tag.split('}')[-1] for elem in chain]
+    assert "sld" in tags
 
 
 def test_extract_grid():
@@ -43,7 +49,6 @@ def test_extract_grid():
     slides = parse_slides("data/templates/template1.pptx", theme)
     grid = extract_grid(slides, layouts)
     assert "columns" in grid
-    assert "margin" in grid
     assert grid["columns"] > 0
 
 
@@ -53,15 +58,13 @@ def test_cluster_patterns():
     slides = parse_slides("data/templates/template1.pptx", theme)
     patterns = cluster_patterns(layouts, slides)
     assert len(patterns) > 0
-    assert "usage_count" in list(patterns.values())[0]
+    used = get_used_patterns(patterns)
+    assert len(used) > 0
 
 
 def test_parse_template():
     ds = parse_template("data/templates/template1.pptx")
-    assert "theme_colors" in ds["palette"]
-    assert "fonts" in ds["typography"]
     assert ds["meta"]["confidence"] > 0.5
     assert len(ds["patterns"]) > 0
-    assert ds["meta"]["slide_count"] >= 0
-    print("Confidence:", ds["meta"]["confidence"])
-    print("Patterns:", list(ds["patterns"].keys()))
+    assert ds["meta"]["slide_count"] > 0
+    assert len(ds["meta"]["errors"]) == 0

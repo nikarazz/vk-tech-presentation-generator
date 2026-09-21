@@ -19,7 +19,7 @@ NS = {
 }
 
 
-def build_inheritance_chain(pptx_path: str, slide_id: int) -> list[etree._Element]:
+def build_inheritance_chain(pptx_path: str, slide_id: int) -> list:
     """
     Строит цепочку наследования для слайда.
 
@@ -62,7 +62,6 @@ def _resolve_relationship(z: ZipFile, source_path: str, rel_type_suffix: str) ->
     rel_type_suffix: 'slideLayout' или 'slideMaster'
     Возвращает: 'ppt/slideLayouts/slideLayout1.xml' или None.
     """
-    # Формируем путь к .rels
     parts = source_path.split('/')
     rels_path = f"{'/'.join(parts[:-1])}/_rels/{parts[-1]}.rels"
 
@@ -76,8 +75,6 @@ def _resolve_relationship(z: ZipFile, source_path: str, rel_type_suffix: str) ->
         rel_type = rel.get('Type', '')
         if rel_type.endswith(f'/{rel_type_suffix}'):
             target = rel.get('Target')
-            # Target относительный: '../slideLayouts/slideLayout1.xml'
-            # Нормализуем
             base = '/'.join(parts[:-1])
             resolved = _normalize_path(base, target)
             if resolved in z.namelist():
@@ -91,7 +88,6 @@ def _normalize_path(base: str, target: str) -> str:
     if target.startswith('/'):
         return target.lstrip('/')
 
-    # base = 'ppt/slides', target = '../slideLayouts/slideLayout1.xml'
     base_parts = base.split('/')
     target_parts = target.split('/')
 
@@ -106,12 +102,12 @@ def _normalize_path(base: str, target: str) -> str:
     return '/'.join(base_parts)
 
 
-def resolve_color_from_chain(chain: list[etree._Element], theme: dict) -> tuple[str | None, float]:
+def resolve_color_from_chain(chain: list, theme: dict) -> tuple:
     """
     Резолвит цвет по цепочке наследования.
 
     Идёт от slide → layout → master. Первое найденное значение — финальное.
-    Если нигде нет — берёт из theme по роли.
+    Если нигде нет — возвращает (None, 1.0).
     """
     from parser.inheritance import resolve_color
 
@@ -123,7 +119,7 @@ def resolve_color_from_chain(chain: list[etree._Element], theme: dict) -> tuple[
     return None, 1.0
 
 
-def resolve_font_size_from_chain(chain: list[etree._Element]) -> float | None:
+def resolve_font_size_from_chain(chain: list) -> float | None:
     """Резолвит кегль по цепочке."""
     from parser.inheritance import resolve_font_size
 
@@ -135,7 +131,7 @@ def resolve_font_size_from_chain(chain: list[etree._Element]) -> float | None:
     return None
 
 
-def resolve_font_family_from_chain(chain: list[etree._Element], theme: dict) -> str | None:
+def resolve_font_family_from_chain(chain: list, theme: dict) -> str | None:
     """Резолвит шрифт по цепочке."""
     from parser.inheritance import resolve_font_family
 
