@@ -3,15 +3,10 @@ import os
 
 
 def plan_content(brief: str, content_pack: dict, ds: dict) -> dict:
-    """
-    Заглушка Content Planner.
-    Возвращает мок-план из 4 слайдов с большим количеством буллетов,
-    чтобы разница между вариантами была заметна.
-    """
     patterns = list(ds.get("patterns", {}).keys())
-    title_pattern = "title" if "title" in patterns else patterns[0] if patterns else "title"
-    content_pattern = "content_bullets" if "content_bullets" in patterns else patterns[0] if patterns else "content_bullets"
-    closing_pattern = "title_only" if "title_only" in patterns else patterns[-1] if patterns else "title_only"
+    title_pattern = "title" if "title" in patterns else patterns[0]
+    content_pattern = "content_bullets" if "content_bullets" in patterns else patterns[0]
+    closing_pattern = "title_only" if "title_only" in patterns else patterns[-1]
     
     return {
         "slides": [
@@ -23,8 +18,6 @@ def plan_content(brief: str, content_pack: dict, ds: dict) -> dict:
                 "Пик использования — вечер",
                 "Мобильные устройства чаще",
                 "Долгое чтение утомляет",
-                "Отсутствие выбора",
-                "Нет настройки темы",
             ]},
             {"pattern_id": content_pattern, "title": "Решение", "bullets": [
                 "Тёмная тема в приложении",
@@ -32,8 +25,33 @@ def plan_content(brief: str, content_pack: dict, ds: dict) -> dict:
                 "Автопереключение по времени",
                 "Настройка в профиле",
                 "Экономия батареи на 15%",
-                "Снижение нагрузки на глаза",
             ]},
+            {
+                "pattern_id": content_pattern,
+                "title": "Динамика включения",
+                "chart": {
+                    "type": "bar",
+                    "title": "Включение тёмной темы по месяцам",
+                    "categories": ["Янв", "Фев", "Мар", "Апр"],
+                    "series": [
+                        {"name": "Доля пользователей, %", "values": [10, 18, 28, 40]},
+                    ],
+                    "x_label": "Месяц",
+                    "y_label": "%",
+                },
+            },
+            {
+                "pattern_id": content_pattern,
+                "title": "Метрики",
+                "table": {
+                    "headers": ["Метрика", "Q1", "Q2", "Q3", "Q4"],
+                    "rows": [
+                        ["DAU", "10M", "12M", "15M", "18M"],
+                        ["Retention", "40%", "42%", "45%", "48%"],
+                        ["NPS", "30", "35", "42", "50"],
+                    ],
+                },
+            },
             {"pattern_id": closing_pattern, "title": "Спасибо"},
         ]
     }
