@@ -1,77 +1,69 @@
-import json
+import sys
 import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+"""Content Planner: бриф + контент-пакет + дизайн-система → SlidePlan."""
+
+import json
+from pathlib import Path
+
+from shared.llm_client import chat_json
 
 
-def plan_content(brief: str, content_pack: dict, ds: dict) -> dict:
-    patterns = list(ds.get("patterns", {}).keys())
-    title_pattern = "title" if "title" in patterns else patterns[0]
-    content_pattern = "content_bullets" if "content_bullets" in patterns else patterns[0]
-    closing_pattern = "title_only" if "title_only" in patterns else patterns[-1]
-    
-    return {
-        "slides": [
-            {"pattern_id": title_pattern, "title": "Тёмная тема", "subtitle": "Фича Q1 2026"},
-            {"pattern_id": content_pattern, "title": "Проблема", "bullets": [
-                "Нагрузка на глаза при ярком экране",
-                "Яркий экран мешает ночью",
-                "Жалобы пользователей растут",
-                "Пик использования — вечер",
-                "Мобильные устройства чаще",
-                "Долгое чтение утомляет",
-            ]},
-            {"pattern_id": content_pattern, "title": "Решение", "bullets": [
-                "Тёмная тема в приложении",
-                "40% пользователей включили за месяц",
-                "Автопереключение по времени",
-                "Настройка в профиле",
-                "Экономия батареи на 15%",
-            ]},
-            {
-                "pattern_id": content_pattern,
-                "title": "Динамика включения",
-                "chart": {
-                    "type": "bar",
-                    "title": "Включение тёмной темы по месяцам",
-                    "categories": ["Янв", "Фев", "Мар", "Апр"],
-                    "series": [
-                        {"name": "Доля пользователей, %", "values": [10, 18, 28, 40]},
-                    ],
-                    "x_label": "Месяц",
-                    "y_label": "%",
-                },
-            },
-            {
-                "pattern_id": content_pattern,
-                "title": "Метрики",
-                "table": {
-                    "headers": ["Метрика", "Q1", "Q2", "Q3", "Q4"],
-                    "rows": [
-                        ["DAU", "10M", "12M", "15M", "18M"],
-                        ["Retention", "40%", "42%", "45%", "48%"],
-                        ["NPS", "30", "35", "42", "50"],
-                    ],
-                },
-            },
-            {"pattern_id": closing_pattern, "title": "Спасибо"},
-        ]
+PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+
+
+def load_prompt(filename: str) -> str:
+    return (PROMPTS_DIR / filename).read_text(encoding="utf-8")
+
+
+def build_user_prompt(brief: str, content_pack: dict, design_system: dict) -> str:
+    patterns = []
+    for pid, p in design_system.get("patterns", {}).items():
+        info = f"- {pid}: {p.get('name', pid)}"
+        constraints = p.get("body_constraints")
+        if constraints:
+            info += f" (max_bullets={constraints.get('max_bullets')})"
+        patterns.append(info)
+    return f"""Бриф: {brief}
+
+Контент-пакет:
+{json.dumps(content_pack, ensure_ascii=False, indent=2)}
+
+Доступные паттерны:
+{chr(10).join(patterns)}
+
+Составь структуру презентации из 8-12 слайдов. Верни JSON."""
+
+
+def plan_content(brief: str, content_pack: dict, design_system: dict) -> dict:
+    system_prompt = load_prompt("content_planner_v1.md")
+    user_prompt = build_user_prompt(brief, content_pack, design_system)
+    response = chat_json(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.3,
+        max_tokens=1500,
+    )
+    plan = json.loads(response)
+    if "slides" not in plan:
+        raise ValueError(f"LLM вернула неверный формат: {plan}")
+    return plan
+
+
+if __name__ == "__main__":
+    from shared.mocks.design_system_mock import MOCK_DESIGN_SYSTEM
+
+    mock_content_pack = {
+        "product": "Тёмная тема в мобильном приложении",
+        "benefits": ["Снижает нагрузку на глаза", "Экономит батарею"],
+        "metrics": {"adoption_first_month": "40%"},
     }
 
+    brief = "Фича: тёмная тема. Метрика: 40%."
 
-def plan_content_llm(brief: str, content_pack: dict, ds: dict) -> dict:
-    """Реальный LLM-вызов. Подключить, когда API готов."""
-    from openai import OpenAI
-    
-    client = OpenAI(
-        base_url=os.getenv("LLM_API_URL"),
-        api_key=os.getenv("LLM_API_KEY"),
-    )
-    patterns = list(ds.get("patterns", {}).keys())
-    prompt = open("prompts/content_planner_v1.md").read().format(
-        brief=brief, patterns=patterns,
-    )
-    response = client.chat.completions.create(
-        model=os.getenv("LLM_MODEL", "qwen3-27b"),
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
-    )
-    return json.loads(response.choices[0].message.content)
+    print("Запуск Content Planner...")
+    plan = plan_content(brief, mock_content_pack, MOCK_DESIGN_SYSTEM)
+    print(json.dumps(plan, ensure_ascii=False, indent=2))
