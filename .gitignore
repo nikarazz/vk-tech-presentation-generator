@@ -27,3 +27,4 @@ output/
 .env.local
 .env.*.local
 .cache/
+.env

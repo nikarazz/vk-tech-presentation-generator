@@ -43,8 +43,14 @@ def layout_slides(plan: dict, ds: dict, mode: str = "dense") -> dict:
             elif role == "slide_subtitle":
                 text = spec.get("subtitle", "")
             elif role == "bullet":
-                bullets = spec.get("bullets", [])[:max_bullets]
-                text = "\n".join(bullets)
+                if "bullets" in spec:
+                    bullets = spec.get("bullets", [])[:max_bullets]
+                    text = "\n".join(bullets)
+                elif "content" in spec:
+                    lines = [line.strip() for line in spec["content"].split("\n") if line.strip()]
+                    text = "\n".join(lines[:max_bullets])
+                else:
+                    text = ""
             else:
                 text = ""
             
