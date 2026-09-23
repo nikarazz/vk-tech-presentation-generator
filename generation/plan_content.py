@@ -174,18 +174,18 @@ def plan_content_llm(
 # Главная функция с fallback
 # ---------------------------------------------------------------------------
 
-def plan_content(
-    brief: str,
-    content_pack: dict,
-    ds: dict,
-    use_llm: bool = True,
-) -> dict:
-    """Content Planner с fallback на заглушку."""
+def plan_content(brief, content_pack, ds, use_llm=True):
+    """С fallback и retry."""
     if use_llm:
-        try:
-            return plan_content_llm(brief, content_pack, ds, verbose=True)
-        except Exception as e:
-            print(f"[plan_content] LLM failed: {e}. Fallback to stub.")
+        import time
+        for attempt in range(3):
+            try:
+                return plan_content_llm(brief, content_pack, ds, verbose=True)
+            except Exception as e:
+                print(f"[plan_content] Attempt {attempt+1} failed: {e}")
+                if attempt < 2:
+                    time.sleep(2)
+        print("[plan_content] All attempts failed. Fallback to stub.")
     return plan_content_stub(brief, content_pack, ds)
 
 

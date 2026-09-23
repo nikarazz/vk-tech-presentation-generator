@@ -1,55 +1,73 @@
+"""Экспорт .pptx → .pdf через LibreOffice."""
 import os
-import platform
+import shutil
 import subprocess
 from pathlib import Path
 
 
-def _find_soffice() -> str:
-    """Ищет LibreOffice soffice в стандартных путях."""
-    system = platform.system()
-    
-    if system == "Windows":
-        paths = [
-            r"C:\Program Files\LibreOffice\program\soffice.exe",
-            r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
-        ]
-    elif system == "Darwin":
-        paths = ["/Applications/LibreOffice.app/Contents/MacOS/soffice"]
-    else:
-        paths = ["/usr/bin/soffice", "/usr/bin/libreoffice"]
-    
-    for p in paths:
-        if os.path.exists(p):
-            return p
-    
-    return "soffice"
+SOFFICE_PATHS = [
+    "soffice",
+    "soffice.exe",
+    "/usr/bin/soffice",
+    "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+    r"C:\Program Files\LibreOffice\program\soffice.exe",
+    r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+]
+
+
+def _find_soffice() -> str | None:
+    """Ищет soffice в PATH и стандартных местах."""
+    found = shutil.which("soffice")
+    if found:
+        return found
+
+    for path in SOFFICE_PATHS:
+        if os.path.exists(path):
+            return path
+
+    return None
 
 
 def export_pdf(pptx_path: str, output_path: str) -> None:
-    """
-    Конвертирует .pptx → .pdf через LibreOffice headless.
-    """
+    """Конвертирует .pptx в .pdf через LibreOffice headless."""
     soffice = _find_soffice()
-    output_dir = str(Path(output_path).parent.resolve())
-    
+    if not soffice:
+        raise RuntimeError(
+            "LibreOffice (soffice) не найден. "
+            "Установите: https://www.libreoffice.org/download/download/"
+        )
+
+    output_dir = str(Path(output_path).resolve().parent)
+    pptx_abs = str(Path(pptx_path).resolve())
+
     cmd = [
         soffice,
         "--headless",
         "--convert-to", "pdf",
         "--outdir", output_dir,
-        pptx_path,
+        pptx_abs,
     ]
-    
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    
+
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
     if result.returncode != 0:
-        raise RuntimeError(f"LibreOffice failed: {result.stderr}")
-    
-    # LibreOffice сохраняет с именем исходного файла
-    src_name = Path(pptx_path).stem
-    generated = Path(output_dir) / f"{src_name}.pdf"
-    
-    if generated.exists() and str(generated) != str(Path(output_path).resolve()):
-        os.replace(generated, output_path)
-    
+        raise RuntimeError(
+            f"LibreOffice failed (code={result.returncode}): {result.stderr}"
+        )
+
+    # LibreOffice сохраняет по имени pptx — переименуем
+    pptx_name = Path(pptx_path).stem
+    generated = Path(output_dir) / f"{pptx_name}.pdf"
+    output_abs = str(Path(output_path).resolve())
+
+    if generated.exists() and str(generated) != output_abs:
+        if os.path.exists(output_abs):
+            os.remove(output_abs)
+        os.rename(str(generated), output_abs)
+
     print(f"[B] Exported PDF: {output_path}")

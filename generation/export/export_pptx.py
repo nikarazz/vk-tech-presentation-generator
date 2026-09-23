@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from pptx import Presentation as PptxPresentation
 from pptx.util import Emu, Pt
 from pptx.dml.color import RGBColor
@@ -53,13 +55,11 @@ def _resolve_layout_ref(slide_data: dict, prs, layout_by_ref: dict) -> str:
 
     pattern_id = slide_data.get("pattern_id", "").lower()
 
-    # Ищем layout, в имени которого есть pattern_id
     for ref, idx in layout_by_ref.items():
         layout = prs.slide_layouts[idx]
         if pattern_id and pattern_id in layout.name.lower():
             return ref
 
-    # Fallback: ищем по ключевым словам
     keyword_map = {
         "title": ["титул", "title"],
         "content": ["содержание", "content", "пункт"],
@@ -76,8 +76,41 @@ def _resolve_layout_ref(slide_data: dict, prs, layout_by_ref: dict) -> str:
                     if kw in layout.name.lower():
                         return ref
 
-    # Совсем fallback: первый layout (title)
     return list(layout_by_ref.keys())[0] if layout_by_ref else ""
+
+
+def _copy_background(slide, layout, ds=None):
+    """Копирует фон с layout или master. Если нет — ставит background из ds."""
+    layout_bg = layout.element.find(qn('p:cSld')).find(qn('p:bg'))
+
+    if layout_bg is None:
+        master = layout.slide_master
+        layout_bg = master.element.find(qn('p:cSld')).find(qn('p:bg'))
+
+    if layout_bg is None:
+        # Fallback: ставим background из ds
+        if ds:
+            bg_hex = ds["palette"]["colors"].get("background", {"hex": "#FFFFFF"})["hex"].lstrip("#")
+            from lxml import etree
+            cSld = slide.element.find(qn('p:cSld'))
+            slide_bg = cSld.find(qn('p:bg'))
+            if slide_bg is not None:
+                cSld.remove(slide_bg)
+            
+            bg_xml = (
+                f'<p:bg xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" '
+                f'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+                f'<p:bgPr><a:solidFill><a:srgbClr val="{bg_hex}"/></a:solidFill>'
+                f'<a:effectLst/></p:bgPr></p:bg>'
+            )
+            cSld.insert(0, etree.fromstring(bg_xml))
+        return
+
+    cSld = slide.element.find(qn('p:cSld'))
+    slide_bg = cSld.find(qn('p:bg'))
+    if slide_bg is not None:
+        cSld.remove(slide_bg)
+    cSld.insert(0, deepcopy(layout_bg))
 
 
 def export_pptx(pres: dict, ds: dict, template_path: str, output_path: str) -> None:
@@ -101,12 +134,18 @@ def export_pptx(pres: dict, ds: dict, template_path: str, output_path: str) -> N
         # Разрешаем layout_ref с fallback
         layout_ref = _resolve_layout_ref(slide_data, prs, layout_by_ref)
         layout_idx = layout_by_ref.get(layout_ref, 0)
-        slide = prs.slides.add_slide(prs.slide_layouts[layout_idx])
+        layout = prs.slide_layouts[layout_idx]
+
+        slide = prs.slides.add_slide(layout)
+
+        # Копируем фон с layout или master
+        _copy_background(slide, layout, ds)
 
         available_phs = {}
         for ph in slide.placeholders:
             available_phs[ph.placeholder_format.idx] = ph
 
+        # Заполняем элементы
         filled_idx = set()
         for el in slide_data["elements"]:
             if el["type"] == "text":
@@ -139,11 +178,11 @@ def export_pptx(pres: dict, ds: dict, template_path: str, output_path: str) -> N
             elif el["type"] == "table":
                 build_table(slide, el["spec"], ds, el["bbox"])
 
-        # Очищаем незаполненные плейсхолдеры
-        for ph in slide.placeholders:
+        # Удаляем незаполненные плейсхолдеры
+        for ph in list(slide.placeholders):
             if ph.placeholder_format.idx not in filled_idx:
                 try:
-                    ph.text = ""
+                    ph._element.getparent().remove(ph._element)
                 except Exception:
                     pass
 

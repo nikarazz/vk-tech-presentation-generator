@@ -1,4 +1,4 @@
-"""Генерирует 3 презентации на 3 разных шаблонах параллельно."""
+"""Генерирует 3 презентации на 3 шаблонах в 3 вариантах вёрстки (9 .pptx)."""
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -11,65 +11,121 @@ from parser.parse_template import parse_template
 from generation.plan_content import plan_content
 from generation.layout_engine import layout_slides
 from generation.export.export_pptx import export_pptx
+from generation.export.export_pdf import export_pdf
+from generation.export.export_html import export_html
 
 
 TEMPLATES = [
-    "data/templates/vk_education.pptx",
-    "data/templates/vk_tech.pptx",
-    "data/templates/vk_workspace.pptx",
+    ("vk_education", "data/templates/vk_education.pptx"),
+    ("vk_tech", "data/templates/vk_tech.pptx"),
+    ("vk_workspace", "data/templates/vk_workspace.pptx"),
 ]
 
+MODES = ["dense", "airy", "data"]
+
 BRIEF = (
-    "Наше решение: сервис для генерации презентаций по шаблону. "
-    "Экономит время дизайнеров, сохраняет корпоративный стиль, "
-    "генерирует 10-15 слайдов за 5 минут."
+    "Сервис для автоматической генерации презентаций по шаблону. "
+    "Проблема: дизайнеры тратят часы на ручную вёрстку. "
+    "Решение: парсинг шаблона + LLM + автовёрстка. "
+    "Результат: 5 минут вместо часов, стиль сохраняется, 3 варианта вёрстки."
 )
 
 
-def generate_one(template_path: str, output_path: str, idx: int) -> dict:
+def generate_one(name, template_path, mode, ds, plan, output_dir):
+    """Генерирует один вариант одной презентации."""
     start = time.time()
-    ds = parse_template(template_path)
-    plan = plan_content(BRIEF, {}, ds)
-    pres = layout_slides(plan, ds)
-    export_pptx(pres, ds, template_path, output_path)
+
+    pres = layout_slides(plan, ds, mode=mode)
+
+    base = f"{output_dir}/{name}_{mode}"
+    pptx_path = f"{base}.pptx"
+
+    export_pptx(pres, ds, template_path, pptx_path)
+
+    # PDF
+    try:
+        export_pdf(pptx_path, f"{base}.pdf")
+    except Exception as e:
+        print(f"[warn] PDF failed for {name}_{mode}: {e}")
+
+    # HTML
+    try:
+        export_html(pptx_path, f"{base}.html")
+    except Exception as e:
+        print(f"[warn] HTML failed for {name}_{mode}: {e}")
+
+    elapsed = round(time.time() - start, 2)
 
     return {
-        "idx": idx,
-        "template": template_path,
-        "output": output_path,
+        "name": name,
+        "mode": mode,
+        "output": pptx_path,
         "slides": len(pres["slides"]),
-        "elapsed": round(time.time() - start, 2),
-        "confidence": ds["meta"]["confidence"],
+        "elapsed": elapsed,
     }
 
 
-async def generate_one_async(template_path, output_path, idx):
+async def generate_one_async(*args):
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(
-        None, generate_one, template_path, output_path, idx
-    )
+    return await loop.run_in_executor(None, generate_one, *args)
 
 
 async def main():
-    Path("output").mkdir(exist_ok=True)
-    start = time.time()
+    output_dir = "output"
+    Path(output_dir).mkdir(exist_ok=True)
 
-    tasks = [
-        generate_one_async(t, f"output/presentation_{i}.pptx", i)
-        for i, t in enumerate(TEMPLATES, 1)
-    ]
+    overall_start = time.time()
+
+    print("=== Step 1: Parse templates & plan content ===")
+    template_data = {}
+
+    for name, template_path in TEMPLATES:
+        print(f"  Parsing {name}...")
+        ds = parse_template(template_path)
+        print(f"    confidence={ds['meta']['confidence']}, layouts={ds['meta']['layout_count']}")
+
+        print(f"  Planning content for {name}...")
+        plan = plan_content(BRIEF, {}, ds)
+        print(f"    slides={len(plan.get('slides', []))}")
+
+        template_data[name] = {
+            "template_path": template_path,
+            "ds": ds,
+            "plan": plan,
+        }
+
+    print()
+    print("=== Step 2: Generate 9 variants ===")
+
+    tasks = []
+    for name, data in template_data.items():
+        for mode in MODES:
+            tasks.append(
+                generate_one_async(
+                    name,
+                    data["template_path"],
+                    mode,
+                    data["ds"],
+                    data["plan"],
+                    output_dir,
+                )
+            )
+
     results = await asyncio.gather(*tasks)
+    overall_elapsed = round(time.time() - overall_start, 2)
 
-    total = time.time() - start
-
+    print()
     print("=== Results ===")
     for r in results:
-        print(f"  #{r['idx']}: {r['template']}")
-        print(f"      → {r['output']}")
-        print(f"      → {r['slides']} slides, {r['elapsed']}s, conf={r['confidence']}")
+        print(f"  {r['name']}_{r['mode']}: {r['slides']} slides, {r['elapsed']}s → {r['output']}")
+
     print()
-    print(f"=== Total: {total:.2f}s ===")
-    print(f"=== Status: {'OK' if total <= 300 else 'FAIL'} ===")
+    print(f"=== Total: {overall_elapsed}s ===")
+    print(f"=== Target: ≤ 300s ===")
+    print(f"=== Status: {'OK' if overall_elapsed <= 300 else 'FAIL'} ===")
+
+    pptx_count = len(list(Path(output_dir).glob("*.pptx")))
+    print(f"=== Generated .pptx: {pptx_count} (expected 9) ===")
 
 
 if __name__ == "__main__":
