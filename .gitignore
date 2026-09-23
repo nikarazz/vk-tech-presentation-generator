@@ -23,7 +23,10 @@ output/
 *.pptx
 *.pdf
 *.html
-!data/templates/*.pptx.env
+!data/templates/*.pptx
+.env
 .env.local
 .env.*.local
 .cache/
+AGENTS.md
+CLAUDE.md
