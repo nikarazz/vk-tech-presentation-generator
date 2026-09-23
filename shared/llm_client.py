@@ -1,12 +1,16 @@
-"""Клиент для работы с LLM через OpenAI-совместимый API (через requests)."""
+"""Клиент для работы с LLM через OpenAI-совместимый API."""
 
 import os
 import json
 import time
+from pathlib import Path
+
 import requests
 from dotenv import load_dotenv
 
-load_dotenv()
+# Ищем .env в корне проекта (на 2 уровня выше shared/)
+_env_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(_env_path)
 
 
 def _get_proxies():
@@ -27,20 +31,26 @@ def chat(
 ) -> str:
     """Отправляет запрос к LLM и возвращает текст ответа."""
 
-    base_url = os.getenv("LLM_BASE_URL")
+    base_url = os.getenv("LLM_API_URL")
     api_key = os.getenv("LLM_API_KEY")
     model = model or os.getenv("LLM_MODEL")
 
     if not base_url or not api_key:
-        raise RuntimeError("LLM_BASE_URL и LLM_API_KEY должны быть в .env")
+        raise RuntimeError(
+            f"LLM_API_URL и LLM_API_KEY должны быть в .env. "
+            f"Искали в: {_env_path}. Существует: {_env_path.exists()}"
+        )
 
     if use_cache:
-        from shared.llm_cache import get as cache_get
-        cached = cache_get(messages, model, temperature, max_tokens)
-        if cached is not None:
-            if verbose:
-                print(f"[cache] hit: {model}")
-            return cached
+        try:
+            from shared.llm_cache import get as cache_get
+            cached = cache_get(messages, model, temperature, max_tokens)
+            if cached is not None:
+                if verbose:
+                    print(f"[cache] hit: {model}")
+                return cached
+        except ImportError:
+            pass
 
     body = {
         "model": model,
@@ -63,7 +73,7 @@ def chat(
         headers=headers,
         json=body,
         proxies=_get_proxies(),
-        timeout=120,
+        timeout=60,
     )
     elapsed = time.time() - t0
 
@@ -75,8 +85,11 @@ def chat(
     text = data["choices"][0]["message"]["content"]
 
     if use_cache:
-        from shared.llm_cache import set as cache_set
-        cache_set(messages, model, temperature, max_tokens, text)
+        try:
+            from shared.llm_cache import set as cache_set
+            cache_set(messages, model, temperature, max_tokens, text)
+        except ImportError:
+            pass
 
     return text
 
@@ -88,6 +101,7 @@ def chat_json(
     max_tokens: int = 4000,
     use_cache: bool = True,
     verbose: bool = False,
+    max_retries=5,
 ) -> str:
     """Отправляет запрос и просит JSON-ответ."""
     return chat(
