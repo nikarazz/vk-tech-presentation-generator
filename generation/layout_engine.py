@@ -31,8 +31,8 @@ ROLE_ORDER = {
 def layout_slides(plan: dict, ds: dict, mode: str = "dense") -> dict:
     """Раскладывает слайды по плейсхолдерам."""
     if mode == "dense":
-        font_multiplier = 0.85
-        padding_multiplier = 0.8
+        font_multiplier = 1.0
+        padding_multiplier = 1.0
         max_bullets = 6
     elif mode == "airy":
         font_multiplier = 1.3
@@ -144,7 +144,7 @@ def layout_slides(plan: dict, ds: dict, mode: str = "dense") -> dict:
                 bbox = {
                     "x_emu": default_x,
                     "y_emu": y_offset,
-                    "w_emu": default_w,
+                    "w_emu": int(default_w * 0.55),
                     "h_emu": default_h,
                 }
                 y_offset += default_h + int(228600 * padding_multiplier)

@@ -1,3 +1,13 @@
+"""Экспорт Presentation → .pptx через копирование шаблонных слайдов.
+
+Подход:
+1. Открываем шаблон (.pptx с контентом).
+2. Собираем шаблонные слайды по имени layout.
+3. Для каждого слайда из pres — находим шаблонный.
+4. Копируем XML шейпов из шаблонного слайда.
+5. Очищаем текст, заполняем своим.
+6. Добавляем chart/table.
+"""
 from copy import deepcopy
 
 from pptx import Presentation as PptxPresentation
@@ -10,7 +20,7 @@ from generation.table_builder import build_table
 
 
 def _apply_style_to_frame(text_frame, style: dict):
-    """Применяет стиль (шрифт, размер, цвет, жирность) ко всем run'ам."""
+    """Применяет шрифт, размер, цвет, жирность."""
     font_name = style.get("font", "Arial")
     font_size = style.get("size_pt", 16)
     color_hex = style.get("color", "#1A1A1A").lstrip("#")
@@ -29,162 +39,155 @@ def _apply_style_to_frame(text_frame, style: dict):
             run.font.color.rgb = rgb
 
 
-def _add_bullet_markers(text_frame):
-    """Добавляет маркер '•' только если его нет."""
-    for para in text_frame.paragraphs:
-        pPr = para._p.get_or_add_pPr()
+def _classify_shape(shape) -> str:
+    """Определяет роль шейпа: title, body, other."""
+    name = shape.name.lower()
+    top = shape.top or 0
+    height = shape.height or 0
+    width = shape.width or 0
 
-        if pPr.find(qn('a:buChar')) is not None:
+    # По имени
+    if "title" in name or "заголов" in name:
+        return "title"
+    if "body" in name or "text" in name or "content" in name or "текст" in name:
+        return "body"
+
+    # По позиции: верхняя треть — title
+    if top < 1500000 and height < 2000000:
+        return "title"
+
+    # По размеру: большой — body
+    if width > 3000000 and height > 1000000:
+        return "body"
+
+    return "other"
+
+
+def _collect_text_shapes(slide) -> list:
+    """Собирает шейпы с непустым текстом."""
+    shapes = []
+    for shape in slide.shapes:
+        try:
+            if shape.has_text_frame and shape.text_frame.text.strip():
+                shapes.append(shape)
+        except Exception:
             continue
-        if pPr.find(qn('a:buAutoNum')) is not None:
-            continue
-
-        buNone = pPr.find(qn('a:buNone'))
-        if buNone is not None:
-            pPr.remove(buNone)
-
-        buChar = pPr.makeelement(qn('a:buChar'), {'char': '•'})
-        pPr.append(buChar)
+    return shapes
 
 
-def _resolve_layout_ref(slide_data: dict, prs, layout_by_ref: dict) -> str:
-    """Определяет layout_ref с fallback по pattern_id."""
-    layout_ref = slide_data.get("layout_ref", "")
-    if layout_ref and layout_ref in layout_by_ref:
-        return layout_ref
+def _copy_shapes(template_slide, new_slide):
+    """Копирует XML шейпов из шаблонного слайда в новый."""
+    template_spTree = template_slide.shapes._spTree
+    new_spTree = new_slide.shapes._spTree
 
-    pattern_id = slide_data.get("pattern_id", "").lower()
+    # Удаляем всё лишнее с нового слайда
+    for sp in list(new_spTree):
+        tag = sp.tag.split('}')[-1]
+        if tag in ('sp', 'pic', 'graphicFrame', 'grpSp', 'cxnSp'):
+            new_spTree.remove(sp)
 
-    for ref, idx in layout_by_ref.items():
-        layout = prs.slide_layouts[idx]
-        if pattern_id and pattern_id in layout.name.lower():
-            return ref
-
-    keyword_map = {
-        "title": ["титул", "title"],
-        "content": ["содержание", "content", "пункт"],
-        "team": ["команда", "team"],
-        "chart": ["статистик", "chart"],
-        "demo": ["демо", "demo"],
-        "closing": ["спасибо", "финал", "thank"],
-    }
-    for key, keywords in keyword_map.items():
-        if key in pattern_id:
-            for ref, idx in layout_by_ref.items():
-                layout = prs.slide_layouts[idx]
-                for kw in keywords:
-                    if kw in layout.name.lower():
-                        return ref
-
-    return list(layout_by_ref.keys())[0] if layout_by_ref else ""
-
-
-def _copy_background(slide, layout, ds=None):
-    """Копирует фон с layout или master. Если нет — ставит background из ds."""
-    layout_bg = layout.element.find(qn('p:cSld')).find(qn('p:bg'))
-
-    if layout_bg is None:
-        master = layout.slide_master
-        layout_bg = master.element.find(qn('p:cSld')).find(qn('p:bg'))
-
-    if layout_bg is None:
-        # Fallback: ставим background из ds
-        if ds:
-            bg_hex = ds["palette"]["colors"].get("background", {"hex": "#FFFFFF"})["hex"].lstrip("#")
-            from lxml import etree
-            cSld = slide.element.find(qn('p:cSld'))
-            slide_bg = cSld.find(qn('p:bg'))
-            if slide_bg is not None:
-                cSld.remove(slide_bg)
-            
-            bg_xml = (
-                f'<p:bg xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" '
-                f'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
-                f'<p:bgPr><a:solidFill><a:srgbClr val="{bg_hex}"/></a:solidFill>'
-                f'<a:effectLst/></p:bgPr></p:bg>'
-            )
-            cSld.insert(0, etree.fromstring(bg_xml))
-        return
-
-    cSld = slide.element.find(qn('p:cSld'))
-    slide_bg = cSld.find(qn('p:bg'))
-    if slide_bg is not None:
-        cSld.remove(slide_bg)
-    cSld.insert(0, deepcopy(layout_bg))
+    # Копируем шейпы из шаблона
+    for sp in list(template_spTree):
+        tag = sp.tag.split('}')[-1]
+        if tag in ('sp', 'pic', 'graphicFrame', 'grpSp', 'cxnSp'):
+            new_spTree.append(deepcopy(sp))
 
 
 def export_pptx(pres: dict, ds: dict, template_path: str, output_path: str) -> None:
+    """Экспортирует Presentation в .pptx."""
     prs = PptxPresentation(template_path)
 
-    # Удалить все существующие слайды
+    # 1. Шаблонные слайды по имени layout
+    template_by_layout = {}
+    for slide in prs.slides:
+        layout_name = slide.slide_layout.name
+        if layout_name not in template_by_layout:
+            template_by_layout[layout_name] = slide
+
+    # 2. Карта: slideLayoutN.xml → имя layout
+    layout_names = {}
+    for layout in prs.slide_layouts:
+        ref = str(layout.part.partname).split("/")[-1]
+        layout_names[ref] = layout.name
+
+    # 3. Удаляем все существующие слайды
     xml_slides = prs.slides._sldIdLst
-    slides = list(xml_slides)
-    for sld in slides:
+    for sld in list(xml_slides):
         rId = sld.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id')
         prs.part.drop_rel(rId)
         xml_slides.remove(sld)
 
-    # Словарь: имя layout → индекс
-    layout_by_ref = {}
-    for idx, layout in enumerate(prs.slide_layouts):
-        ref = str(layout.part.partname).split("/")[-1]
-        layout_by_ref[ref] = idx
-
+    # 4. Создаём новые слайды
     for slide_data in pres["slides"]:
-        # Разрешаем layout_ref с fallback
-        layout_ref = _resolve_layout_ref(slide_data, prs, layout_by_ref)
-        layout_idx = layout_by_ref.get(layout_ref, 0)
-        layout = prs.slide_layouts[layout_idx]
+        layout_ref = slide_data.get("layout_ref", "")
+        layout_name = layout_names.get(layout_ref, "")
 
-        slide = prs.slides.add_slide(layout)
+        # Ищем шаблонный слайд
+        template_slide = template_by_layout.get(layout_name)
+        if template_slide is None:
+            template_slide = list(template_by_layout.values())[0]
 
-        # Копируем фон с layout или master
-        _copy_background(slide, layout, ds)
+        # Создаём новый слайд
+        new_slide = prs.slides.add_slide(template_slide.slide_layout)
 
-        available_phs = {}
-        for ph in slide.placeholders:
-            available_phs[ph.placeholder_format.idx] = ph
+        # Копируем шейпы из шаблона
+        _copy_shapes(template_slide, new_slide)
 
-        # Заполняем элементы
-        filled_idx = set()
+        # Собираем текстовые шейпы
+        text_shapes = _collect_text_shapes(new_slide)
+
+        # Классифицируем
+        title_shape = None
+        body_shape = None
+        for shape in text_shapes:
+            role = _classify_shape(shape)
+            if role == "title" and title_shape is None:
+                title_shape = shape
+            elif role == "body" and body_shape is None:
+                body_shape = shape
+
+        # Очищаем все тексты
+        for shape in text_shapes:
+            try:
+                shape.text_frame.text = ""
+            except Exception:
+                pass
+
+        # Заполняем контент
         for el in slide_data["elements"]:
             if el["type"] == "text":
-                ph_idx = el.get("placeholder_idx")
-                is_bullet = el.get("role") == "bullet"
+                role = el.get("role")
+                text = el.get("text", "")
+                style = el.get("style", {})
 
-                if ph_idx is not None and ph_idx in available_phs:
-                    ph = available_phs[ph_idx]
-                    ph.text = el["text"]
-                    _apply_style_to_frame(ph.text_frame, el.get("style", {}))
-                    if is_bullet:
-                        _add_bullet_markers(ph.text_frame)
-                    filled_idx.add(ph_idx)
+                if not text:
+                    continue
+
+                if role in ("slide_title", "section_title") and title_shape is not None:
+                    title_shape.text_frame.text = text
+                    _apply_style_to_frame(title_shape.text_frame, style)
+
+                elif role == "bullet" and body_shape is not None:
+                    body_shape.text_frame.text = text
+                    _apply_style_to_frame(body_shape.text_frame, style)
+
                 else:
+                    # Fallback: textbox
                     bbox = el["bbox"]
-                    txBox = slide.shapes.add_textbox(
+                    txBox = new_slide.shapes.add_textbox(
                         Emu(bbox["x_emu"]), Emu(bbox["y_emu"]),
                         Emu(bbox["w_emu"]), Emu(bbox["h_emu"]),
                     )
                     tf = txBox.text_frame
                     tf.word_wrap = True
-                    tf.text = el["text"]
-                    _apply_style_to_frame(tf, el.get("style", {}))
-                    if is_bullet:
-                        _add_bullet_markers(tf)
+                    tf.text = text
+                    _apply_style_to_frame(tf, style)
 
             elif el["type"] == "chart":
-                build_chart(slide, el["spec"], ds, el["bbox"])
+                build_chart(new_slide, el["spec"], ds, el["bbox"])
 
             elif el["type"] == "table":
-                build_table(slide, el["spec"], ds, el["bbox"])
-
-        # Удаляем незаполненные плейсхолдеры
-        for ph in list(slide.placeholders):
-            if ph.placeholder_format.idx not in filled_idx:
-                try:
-                    ph._element.getparent().remove(ph._element)
-                except Exception:
-                    pass
+                build_table(new_slide, el["spec"], ds, el["bbox"])
 
     prs.save(output_path)
     print(f"[B] Saved to {output_path}")

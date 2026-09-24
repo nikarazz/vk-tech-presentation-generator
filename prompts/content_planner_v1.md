@@ -20,11 +20,14 @@
   "title": "Заголовок графика",
   "categories": ["Категория 1", "Категория 2"],
   "series": [{"name": "Название серии", "values": [10, 20]}],
-  "x_label": "Ось X",
-  "y_label": "Ось Y"
+  "x_label": "Подпись оси X",
+  "y_label": "Подпись оси Y"
 }
 
-Допустимые типы: bar, line, pie, donut, area.
+ВАЖНО:
+- ВСЕГДА указывай x_label и y_label.
+- Для 2 категорий — используй donut или pie.
+- Для 3+ категорий — bar или line.
 
 ## Формат таблицы
 
@@ -37,8 +40,8 @@
 
 Верни ТОЛЬКО JSON:
 {"slides": [
-  {"pattern_id": "title", "title": "..."},
-  {"pattern_id": "content_bullets", "title": "...", "bullets": ["..."]},
-  {"pattern_id": "data_chart", "title": "...", "chart": {"type": "bar", "title": "...", "categories": ["A", "B"], "series": [{"name": "X", "values": [1, 2]}], "x_label": "X", "y_label": "Y"}},
+  {"pattern_id": "title", "title": "...", "subtitle": "..."},
+  {"pattern_id": "content_bullets", "title": "...", "bullets": ["...", "..."]},
+  {"pattern_id": "data_chart", "title": "...", "chart": {"type": "donut", "title": "...", "categories": ["A", "B"], "series": [{"name": "Доля", "values": [40, 60]}], "x_label": "Категории", "y_label": "Проценты"}},
   {"pattern_id": "data_table", "title": "...", "table": {"headers": ["A", "B"], "rows": [["1", "2"]]}}
 ]}

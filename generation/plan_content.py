@@ -77,58 +77,50 @@ def _find_pattern(patterns: list, *keywords, fallback: str = None) -> str:
 
 
 def plan_content_stub(brief: str, content_pack: dict, ds: dict) -> dict:
-    """Заглушка: использует реальные паттерны из шаблона."""
-    patterns = list(ds.get("patterns", {}).keys())
-
+    """Заглушка: 10 слайдов с реальными паттернами шаблона."""
+    patterns = ds.get("patterns", {})
     if not patterns:
-        patterns = ["title", "content_bullets", "title_only"]
+        patterns = {"title": {}, "content_bullets": {}}
 
-    title_pattern = _find_pattern(patterns, "title", fallback="title")
-    content_pattern = _find_pattern(
-        patterns, "content_bullets", "content", "пункт",
-        fallback="content_bullets",
-    )
-    closing_pattern = _find_pattern(
-        patterns, "title_only", "team", "closing",
-        fallback=title_pattern,
-    )
+    pattern_ids = list(patterns.keys())
 
-    return {
-        "slides": [
-            {
-                "pattern_id": title_pattern,
-                "title": "Тёмная тема",
-                "subtitle": "Фича Q1 2026",
-            },
-            {
-                "pattern_id": content_pattern,
-                "title": "Проблема",
-                "bullets": [
-                    "Нагрузка на глаза при ярком экране",
-                    "Яркий экран мешает ночью",
-                    "Жалобы пользователей растут",
-                ],
-            },
-            {
-                "pattern_id": content_pattern,
-                "title": "Решение",
-                "bullets": [
-                    "Тёмная тема в приложении",
-                    "40% пользователей включили за месяц",
-                    "Автопереключение по времени",
-                ],
-            },
-            {
-                "pattern_id": closing_pattern,
-                "title": "Спасибо",
-            },
-        ]
-    }
+    # Ищем title-паттерн
+    title_p = "title" if "title" in patterns else pattern_ids[0]
+
+    # Ищем body-паттерн
+    body_patterns = [
+        pid for pid, p in patterns.items()
+        if any(ph.get("role") == "bullet" for ph in p.get("placeholders", []))
+    ]
+    content_p = body_patterns[0] if body_patterns else title_p
+
+    # Контентные слайды с буллетами
+    content_slides = [
+        ("Проблема", ["Ручная вёрстка занимает часы", "Дизайнеры перегружены", "Шаблоны не адаптируются"]),
+        ("Решение", ["Парсинг произвольного шаблона", "LLM генерирует структуру", "Автовёрстка по плейсхолдерам"]),
+        ("Как это работает", ["Загрузка шаблона .pptx", "Бриф → план слайдов", "Раскладка по правилам шаблона"]),
+        ("Преимущества", ["5 минут вместо часов", "3 варианта вёрстки", "Экспорт в .pptx / .pdf / .html"]),
+        ("Технологии", ["Parser: python-pptx + lxml", "LLM: Qwen / GPT", "Layout Engine: детерминированный"]),
+        ("Метрики", ["Время генерации ≤ 5 мин", "Соответствие стилю 100%", "Устойчивость к шаблонам"]),
+        ("Развитие", ["Генерация изображений", "SmartArt", "Веб-интерфейс"]),
+        ("Команда", ["Parser Engineer", "Generation Engineer", "Audit Engineer"]),
+        ("Итоги", ["Работающий прототип", "Устойчивость к шаблонам", "Готовность к пилоту"]),
+    ]
+
+    slides = [{"pattern_id": title_p, "title": "Тёмная тема", "subtitle": "Фича Q1 2026"}]
+
+    for title, bullets in content_slides:
+        slides.append({
+            "pattern_id": content_p,
+            "title": title,
+            "bullets": bullets,
+        })
+
+    slides.append({"pattern_id": title_p, "title": "Спасибо"})
+
+    return {"slides": slides}
 
 
-# ---------------------------------------------------------------------------
-# LLM — реальный вызов с fallback-моделью
-# ---------------------------------------------------------------------------
 
 def plan_content_llm(
     brief: str,
