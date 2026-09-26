@@ -42,6 +42,10 @@ def layout_slides(plan: dict, ds: dict, mode: str = "dense") -> dict:
             if role in ("date", "footer", "slide_number"):
                 continue
 
+            # Пропускаем декор (placeholder'ы с мусорным текстом)
+            if role == "decoration":
+                continue
+
             # Не дублируем bullet — в шаблоне их бывает несколько
             if role == "bullet" and any(e["role"] == "bullet" for e in elements):
                 continue
@@ -95,6 +99,38 @@ def layout_slides(plan: dict, ds: dict, mode: str = "dense") -> dict:
                 "placeholder_idx": ph.get("idx"),
                 "bbox": bbox,
                 "text": text,
+                "style": {
+                    "font": font,
+                    "size_pt": int(scale["size_pt"] * font_multiplier),
+                    "weight": scale.get("weight", 400),
+                },
+            })
+
+        # ── Fallback: буллеты есть, но bullet-элемента нет ──
+        bullets_text = "\n".join(spec.get("bullets", [])[:max_bullets])
+        has_bullet_el = any(e.get("role") == "bullet" for e in elements)
+        if bullets_text and not has_bullet_el:
+            role_key = ds["typography"]["roles"].get("bullet", "body")
+            scale = ds["typography"]["scale"].get(
+                role_key, {"size_pt": 16, "weight": 400}
+            )
+            font = (
+                ds["typography"]["fonts"]
+                .get("primary", {})
+                .get("family", "Arial")
+            )
+            elements.append({
+                "element_id": f"bullet_{i}_fallback",
+                "type": "text",
+                "role": "bullet",
+                "placeholder_idx": None,
+                "bbox": {
+                    "x_emu": default_x,
+                    "y_emu": default_y + 1200000,   # ниже заголовка
+                    "w_emu": int(default_w * 0.75),
+                    "h_emu": 2500000,
+                },
+                "text": bullets_text,
                 "style": {
                     "font": font,
                     "size_pt": int(scale["size_pt"] * font_multiplier),

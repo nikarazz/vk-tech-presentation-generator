@@ -8,7 +8,7 @@
 5. Удаляем сервисные/пустые placeholder'ы.
 6. Заполняем контент. Цвет текста — по шаблону:
    - vk_tech / vk_workspace — БЕЛЫЙ (тёмные)
-   - vk_education — ЧЁРНЫЙ (светлый)
+   - vk_education — ТЁМНЫЙ (светлый)
 """
 from copy import deepcopy
 
@@ -29,24 +29,15 @@ SERVICE_TEXTS = {
 
 
 def _pick_text_color(ds: dict) -> tuple:
-    """Цвет текста по шаблону.
-
-    vk_tech / vk_workspace — тёмные → белый.
-    vk_education — светлый → тёмный.
-    """
+    """Цвет текста по шаблону: тёмные → белый, светлые → тёмный."""
     source = (ds.get("meta", {}).get("source_file") or "").lower()
     if "vk_tech" in source or "vk_workspace" in source:
-        return (0xFF, 0xFF, 0xFF)   # белый
-    # По умолчанию — тёмный (для светлых шаблонов)
+        return (0xFF, 0xFF, 0xFF)
     return (0x1A, 0x1A, 0x1A)
 
 
 def _apply_style_to_frame(text_frame, style: dict, default_rgb=(0xFF, 0xFF, 0xFF)):
-    """Применяет шрифт, размер, цвет, жирность.
-
-    Если в style задан color — используем его.
-    Иначе — default_rgb (зависит от шаблона).
-    """
+    """Применяет шрифт, размер, цвет, жирность."""
     font_name = style.get("font", "Arial")
     font_size = style.get("size_pt", 16)
     color_hex = style.get("color")
@@ -97,7 +88,6 @@ def _collect_text_shapes(slide) -> list:
 
 
 def _copy_shapes(template_slide, new_slide):
-    """Копирует XML шейпов из шаблонного слайда в новый."""
     template_spTree = template_slide.shapes._spTree
     new_spTree = new_slide.shapes._spTree
 
@@ -113,12 +103,7 @@ def _copy_shapes(template_slide, new_slide):
 
 
 def _remove_service_shapes(slide):
-    """Удаляет placeholder'ы, не заполненные нашим контентом.
-
-    Убирает:
-      - placeholder'ы с сервисным текстом ("Текст слайда", "Заголовок");
-      - пустые placeholder'ы (PowerPoint рисует в них prompt text).
-    """
+    """Удаляет placeholder'ы, не заполненные нашим контентом."""
     for shape in list(slide.shapes):
         try:
             if not shape.is_placeholder:
@@ -135,31 +120,25 @@ def _remove_service_shapes(slide):
 def export_pptx(pres: dict, ds: dict, template_path: str, output_path: str) -> None:
     """Экспортирует Presentation в .pptx."""
     prs = PptxPresentation(template_path)
-
-    # Цвет текста по шаблону (один раз)
     default_rgb = _pick_text_color(ds)
 
-    # 1. Шаблонные слайды по имени layout
     template_by_layout = {}
     for slide in prs.slides:
         layout_name = slide.slide_layout.name
         if layout_name not in template_by_layout:
             template_by_layout[layout_name] = slide
 
-    # 2. Карта: slideLayoutN.xml → имя layout
     layout_names = {}
     for layout in prs.slide_layouts:
         ref = str(layout.part.partname).split("/")[-1]
         layout_names[ref] = layout.name
 
-    # 3. Удаляем существующие слайды
     xml_slides = prs.slides._sldIdLst
     for sld in list(xml_slides):
         rId = sld.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id')
         prs.part.drop_rel(rId)
         xml_slides.remove(sld)
 
-    # 4. Создаём новые слайды
     for slide_data in pres["slides"]:
         layout_ref = slide_data.get("layout_ref", "")
         layout_name = layout_names.get(layout_ref, "")
@@ -201,15 +180,30 @@ def export_pptx(pres: dict, ds: dict, template_path: str, output_path: str) -> N
                     title_shape.text_frame.text = text
                     _apply_style_to_frame(title_shape.text_frame, style, default_rgb)
 
-                elif role == "bullet" and body_shape is not None:
-                    body_shape.text_frame.text = text
-                    _apply_style_to_frame(body_shape.text_frame, style, default_rgb)
+                elif role in ("bullet", "slide_subtitle", "body"):
+                    if body_shape is not None:
+                        body_shape.text_frame.text = text
+                        _apply_style_to_frame(body_shape.text_frame, style, default_rgb)
+                    else:
+                        # Fallback: TextBox, если в шаблоне нет body-placeholder'а
+                        bbox = el.get("bbox")
+                        if bbox:
+                            txBox = new_slide.shapes.add_textbox(
+                                Emu(int(bbox["x_emu"])), Emu(int(bbox["y_emu"])),
+                                Emu(int(bbox["w_emu"])), Emu(int(bbox["h_emu"])),
+                            )
+                            tf = txBox.text_frame
+                            tf.word_wrap = True
+                            tf.text = text
+                            _apply_style_to_frame(tf, style, default_rgb)
 
                 else:
-                    bbox = el["bbox"]
+                    bbox = el.get("bbox")
+                    if not bbox:
+                        continue
                     txBox = new_slide.shapes.add_textbox(
-                        Emu(bbox["x_emu"]), Emu(bbox["y_emu"]),
-                        Emu(bbox["w_emu"]), Emu(bbox["h_emu"]),
+                        Emu(int(bbox["x_emu"])), Emu(int(bbox["y_emu"])),
+                        Emu(int(bbox["w_emu"])), Emu(int(bbox["h_emu"])),
                     )
                     tf = txBox.text_frame
                     tf.word_wrap = True
@@ -222,7 +216,6 @@ def export_pptx(pres: dict, ds: dict, template_path: str, output_path: str) -> N
             elif el["type"] == "table":
                 build_table(new_slide, el["spec"], ds, el["bbox"])
 
-        # Удаляем пустые/сервисные placeholder'ы
         _remove_service_shapes(new_slide)
 
     prs.save(output_path)
