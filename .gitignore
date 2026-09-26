@@ -30,3 +30,4 @@ output/
 .cache/
 AGENTS.md
 CLAUDE.md
+run.log
