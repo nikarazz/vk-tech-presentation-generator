@@ -1,3 +1,5 @@
+"""Мок дизайн-системы для параллельной разработки."""
+
 MOCK_DESIGN_SYSTEM = {
     "version": "1.0",
     "meta": {
@@ -15,38 +17,20 @@ MOCK_DESIGN_SYSTEM = {
         }
     },
     "typography": {
-        "fonts": {
-            "primary": {"family": "Arial", "fallback": "Arial"},
-            "secondary": {"family": "Arial", "fallback": "Arial"},
-        },
         "scale": {
             "h1": {"size_pt": 32, "weight": 700},
             "body": {"size_pt": 16, "weight": 400},
         },
         "roles": {"slide_title": "h1", "bullet": "body"},
     },
-    "grid": {
-        "columns": 12,
-        "margin": {"top_emu": 457200, "right_emu": 457200, "bottom_emu": 457200, "left_emu": 457200},
-        "safe_area": {"top_emu": 685800, "right_emu": 685800, "bottom_emu": 685800, "left_emu": 685800},
-    },
     "patterns": {
-        "title": {
-            "layout_ref": "slideLayout1.xml",
-            "placeholders": [{"type": "title", "idx": 0, "role": "slide_title"}],
-        },
+        "title": {"name": "Титульный слайд"},
         "content_bullets": {
-            "layout_ref": "slideLayout3.xml",
-            "placeholders": [
-                {"type": "title", "idx": 0, "role": "slide_title"},
-                {"type": "body", "idx": 1, "role": "bullet"},
-            ],
+            "name": "Контент с буллетами",
             "body_constraints": {"max_bullets": 6, "max_words_per_bullet": 15},
         },
-        "closing": {
-            "layout_ref": "slideLayout8.xml",
-            "placeholders": [{"type": "title", "idx": 0, "role": "slide_title"}],
-        },
+        "data_chart": {"name": "Слайд с диаграммой"},
+        "closing": {"name": "Финальный слайд"},
     },
     "rules": {
         "max_font_families": 2,
