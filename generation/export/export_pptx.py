@@ -1,4 +1,15 @@
-"""Экспорт Presentation → .pptx через копирование шаблонных слайдов."""
+"""Экспорт Presentation → .pptx через копирование шаблонных слайдов.
+
+Подход:
+1. Открываем шаблон (.pptx с контентом).
+2. Собираем шаблонные слайды по имени layout.
+3. Для каждого слайда из pres — находим шаблонный.
+4. Копируем XML шейпов из шаблонного слайда.
+5. Удаляем сервисные/пустые placeholder'ы.
+6. Заполняем контент. Цвет текста — по шаблону:
+   - vk_tech / vk_workspace — БЕЛЫЙ (тёмные)
+   - vk_education — ЧЁРНЫЙ (светлый)
+"""
 from copy import deepcopy
 
 from pptx import Presentation as PptxPresentation
@@ -17,17 +28,37 @@ SERVICE_TEXTS = {
 }
 
 
-def _apply_style_to_frame(text_frame, style: dict):
-    """Применяет шрифт, размер, цвет (белый по умолчанию), жирность."""
+def _pick_text_color(ds: dict) -> tuple:
+    """Цвет текста по шаблону.
+
+    vk_tech / vk_workspace — тёмные → белый.
+    vk_education — светлый → тёмный.
+    """
+    source = (ds.get("meta", {}).get("source_file") or "").lower()
+    if "vk_tech" in source or "vk_workspace" in source:
+        return (0xFF, 0xFF, 0xFF)   # белый
+    # По умолчанию — тёмный (для светлых шаблонов)
+    return (0x1A, 0x1A, 0x1A)
+
+
+def _apply_style_to_frame(text_frame, style: dict, default_rgb=(0xFF, 0xFF, 0xFF)):
+    """Применяет шрифт, размер, цвет, жирность.
+
+    Если в style задан color — используем его.
+    Иначе — default_rgb (зависит от шаблона).
+    """
     font_name = style.get("font", "Arial")
     font_size = style.get("size_pt", 16)
-    color_hex = style.get("color", "#FFFFFF").lstrip("#")   # ← БЕЛЫЙ по умолчанию
+    color_hex = style.get("color")
     weight = style.get("weight", 400)
 
-    try:
-        rgb = RGBColor.from_string(color_hex)
-    except Exception:
-        rgb = RGBColor(0xFF, 0xFF, 0xFF)
+    if color_hex:
+        try:
+            rgb = RGBColor.from_string(color_hex.lstrip("#"))
+        except Exception:
+            rgb = RGBColor(*default_rgb)
+    else:
+        rgb = RGBColor(*default_rgb)
 
     for para in text_frame.paragraphs:
         for run in para.runs:
@@ -102,7 +133,11 @@ def _remove_service_shapes(slide):
 
 
 def export_pptx(pres: dict, ds: dict, template_path: str, output_path: str) -> None:
+    """Экспортирует Presentation в .pptx."""
     prs = PptxPresentation(template_path)
+
+    # Цвет текста по шаблону (один раз)
+    default_rgb = _pick_text_color(ds)
 
     # 1. Шаблонные слайды по имени layout
     template_by_layout = {}
@@ -164,11 +199,11 @@ def export_pptx(pres: dict, ds: dict, template_path: str, output_path: str) -> N
 
                 if role in ("slide_title", "section_title") and title_shape is not None:
                     title_shape.text_frame.text = text
-                    _apply_style_to_frame(title_shape.text_frame, style)
+                    _apply_style_to_frame(title_shape.text_frame, style, default_rgb)
 
                 elif role == "bullet" and body_shape is not None:
                     body_shape.text_frame.text = text
-                    _apply_style_to_frame(body_shape.text_frame, style)
+                    _apply_style_to_frame(body_shape.text_frame, style, default_rgb)
 
                 else:
                     bbox = el["bbox"]
@@ -179,7 +214,7 @@ def export_pptx(pres: dict, ds: dict, template_path: str, output_path: str) -> N
                     tf = txBox.text_frame
                     tf.word_wrap = True
                     tf.text = text
-                    _apply_style_to_frame(tf, style)
+                    _apply_style_to_frame(tf, style, default_rgb)
 
             elif el["type"] == "chart":
                 build_chart(new_slide, el["spec"], ds, el["bbox"])
@@ -187,7 +222,7 @@ def export_pptx(pres: dict, ds: dict, template_path: str, output_path: str) -> N
             elif el["type"] == "table":
                 build_table(new_slide, el["spec"], ds, el["bbox"])
 
-        # ← Убираем «Текст слайда» и пустые placeholder'ы
+        # Удаляем пустые/сервисные placeholder'ы
         _remove_service_shapes(new_slide)
 
     prs.save(output_path)
