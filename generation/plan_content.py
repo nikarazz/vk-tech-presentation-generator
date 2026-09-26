@@ -16,9 +16,9 @@ from shared.llm_client import chat_json
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
 
-# ---------------------------------------------------------------------------
+
 # Промпты
-# ---------------------------------------------------------------------------
+
 
 def load_prompt(filename: str) -> str:
     """Загружает промпт из файла."""
@@ -61,11 +61,11 @@ def build_user_prompt(brief: str, content_pack: dict, ds: dict) -> str:
 {{"slides": [{{"pattern_id": "...", "title": "...", "bullets": ["..."]}}]}}"""
 
 
-# ---------------------------------------------------------------------------
-# Stub — работает без LLM
-# ---------------------------------------------------------------------------
 
-def _find_pattern(patterns: list, *keywords, fallback: str = None) -> str:
+# Stub — работает без LLM
+
+
+def _find_pattern(patterns: dict, *keywords, fallback: str = None) -> str:
     """Ищет паттерн по нескольким ключевым словам."""
     for keyword in keywords:
         for pid in patterns:
@@ -73,41 +73,117 @@ def _find_pattern(patterns: list, *keywords, fallback: str = None) -> str:
                 return pid
     if fallback and fallback in patterns:
         return fallback
-    return patterns[0] if patterns else fallback
+    return list(patterns.keys())[0] if patterns else fallback
+
+
+def _pick_content_pattern(patterns: dict) -> str:
+    """Выбирает лучший pattern для контентного слайда (буллеты).
+
+    Исключает title / title_only — они для титульников.
+    Приоритет: content_bullets → content_bullets_N → любой с bullet.
+    """
+    # Все pattern'ы, где есть bullet-placeholder, кроме титульных
+    body_patterns = [
+        pid for pid, p in patterns.items()
+        if any(ph.get("role") == "bullet" for ph in p.get("placeholders", []))
+        and pid != "title"
+        and not pid.startswith("title_only")
+        and pid != "layout"
+        and not pid.startswith("layout_")
+    ]
+
+    # Приоритет 1: чистый content_bullets (без суффикса)
+    if "content_bullets" in body_patterns:
+        return "content_bullets"
+
+    # Приоритет 2: content_bullets_N — берём с максимальным числом буллетов
+    cb_variants = [pid for pid in body_patterns if pid.startswith("content_bullets")]
+    if cb_variants:
+        # Сортируем по числу bullet-placeholder'ов (больше = лучше)
+        cb_variants.sort(
+            key=lambda pid: len([
+                ph for ph in patterns[pid].get("placeholders", [])
+                if ph.get("role") == "bullet"
+            ]),
+            reverse=True,
+        )
+        return cb_variants[0]
+
+    # Приоритет 3: любой body-pattern
+    if body_patterns:
+        return body_patterns[0]
+
+    # Fallback
+    return "title" if "title" in patterns else list(patterns.keys())[0]
 
 
 def plan_content_stub(brief: str, content_pack: dict, ds: dict) -> dict:
-    """Заглушка: 10 слайдов с реальными паттернами шаблона."""
+    """Заглушка: 11 слайдов с реальными паттернами шаблона."""
     patterns = ds.get("patterns", {})
     if not patterns:
         patterns = {"title": {}, "content_bullets": {}}
 
-    pattern_ids = list(patterns.keys())
+    # Титульный pattern
+    title_p = "title" if "title" in patterns else list(patterns.keys())[0]
 
-    # Ищем title-паттерн
-    title_p = "title" if "title" in patterns else pattern_ids[0]
+    # Контентный pattern (буллеты) — исключая титульные
+    content_p = _pick_content_pattern(patterns)
 
-    # Ищем body-паттерн
-    body_patterns = [
-        pid for pid, p in patterns.items()
-        if any(ph.get("role") == "bullet" for ph in p.get("placeholders", []))
-    ]
-    content_p = body_patterns[0] if body_patterns else title_p
+    # Финальный pattern — title_only, если есть
+    final_p = _find_pattern(patterns, "title_only", fallback=title_p)
 
-    # Контентные слайды с буллетами
+    # Контентные слайды
     content_slides = [
-        ("Проблема", ["Ручная вёрстка занимает часы", "Дизайнеры перегружены", "Шаблоны не адаптируются"]),
-        ("Решение", ["Парсинг произвольного шаблона", "LLM генерирует структуру", "Автовёрстка по плейсхолдерам"]),
-        ("Как это работает", ["Загрузка шаблона .pptx", "Бриф → план слайдов", "Раскладка по правилам шаблона"]),
-        ("Преимущества", ["5 минут вместо часов", "3 варианта вёрстки", "Экспорт в .pptx / .pdf / .html"]),
-        ("Технологии", ["Parser: python-pptx + lxml", "LLM: Qwen / GPT", "Layout Engine: детерминированный"]),
-        ("Метрики", ["Время генерации ≤ 5 мин", "Соответствие стилю 100%", "Устойчивость к шаблонам"]),
-        ("Развитие", ["Генерация изображений", "SmartArt", "Веб-интерфейс"]),
-        ("Команда", ["Parser Engineer", "Generation Engineer", "Audit Engineer"]),
-        ("Итоги", ["Работающий прототип", "Устойчивость к шаблонам", "Готовность к пилоту"]),
+        ("Проблема", [
+            "Ручная вёрстка занимает часы",
+            "Дизайнеры перегружены",
+            "Шаблоны не адаптируются",
+        ]),
+        ("Решение", [
+            "Парсинг произвольного шаблона",
+            "LLM генерирует структуру",
+            "Автовёрстка по плейсхолдерам",
+        ]),
+        ("Как это работает", [
+            "Загрузка шаблона .pptx",
+            "Бриф → план слайдов",
+            "Раскладка по правилам шаблона",
+        ]),
+        ("Преимущества", [
+            "5 минут вместо часов",
+            "3 варианта вёрстки",
+            "Экспорт в .pptx / .pdf / .html",
+        ]),
+        ("Технологии", [
+            "Parser: python-pptx + lxml",
+            "LLM: Qwen / GPT",
+            "Layout Engine: детерминированный",
+        ]),
+        ("Метрики", [
+            "Время генерации ≤ 5 мин",
+            "Соответствие стилю 100%",
+            "Устойчивость к шаблонам",
+        ]),
+        ("Развитие", [
+            "Генерация изображений",
+            "SmartArt",
+            "Веб-интерфейс",
+        ]),
+        ("Команда", [
+            "Parser Engineer",
+            "Generation Engineer",
+            "Audit Engineer",
+        ]),
+        ("Итоги", [
+            "Работающий прототип",
+            "Устойчивость к шаблонам",
+            "Готовность к пилоту",
+        ]),
     ]
 
-    slides = [{"pattern_id": title_p, "title": "Тёмная тема", "subtitle": "Фича Q1 2026"}]
+    slides = [
+        {"pattern_id": title_p, "title": "Тёмная тема", "subtitle": "Фича Q1 2026"}
+    ]
 
     for title, bullets in content_slides:
         slides.append({
@@ -116,10 +192,13 @@ def plan_content_stub(brief: str, content_pack: dict, ds: dict) -> dict:
             "bullets": bullets,
         })
 
-    slides.append({"pattern_id": title_p, "title": "Спасибо"})
+    slides.append({"pattern_id": final_p, "title": "Спасибо"})
 
     return {"slides": slides}
 
+
+
+# LLM-режим
 
 
 def plan_content_llm(
@@ -162,12 +241,12 @@ def plan_content_llm(
     raise last_error or RuntimeError("All models failed")
 
 
-# ---------------------------------------------------------------------------
+
 # Главная функция с fallback
-# ---------------------------------------------------------------------------
+
 
 def plan_content(brief, content_pack, ds, use_llm=True):
-    """С fallback и retry."""
+    """С fallback и retry. use_llm=False → сразу stub."""
     if use_llm:
         import time
         for attempt in range(3):
@@ -181,13 +260,13 @@ def plan_content(brief, content_pack, ds, use_llm=True):
     return plan_content_stub(brief, content_pack, ds)
 
 
-# ---------------------------------------------------------------------------
+
 # CLI
-# ---------------------------------------------------------------------------
+
 
 if __name__ == "__main__":
     from shared.mocks.design_system_mock import MOCK_DESIGN_SYSTEM
 
     brief = "Фича: тёмная тема. Метрика: 40%."
-    plan = plan_content(brief, {}, MOCK_DESIGN_SYSTEM)
+    plan = plan_content(brief, {}, MOCK_DESIGN_SYSTEM, use_llm=False)
     print(json.dumps(plan, ensure_ascii=False, indent=2))

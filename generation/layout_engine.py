@@ -1,32 +1,5 @@
 """Layout Engine: SlidePlan + DesignSystem → Presentation."""
 
-SKIP_PLACEHOLDER_KEYWORDS = [
-    'логотип', 'logo',
-    'номер и название', 'номер задачи',
-    'иконка задачи', 'иконка',
-    'подпись', 'caption',
-    'вставить фото', 'вставить qr',
-    'qr-код', 'qr код',
-    'имя фамилия', 'имя спикера',
-    'должность',
-    'название компании',
-    'vktech', 'vk tech',
-    'vk workspace', 'vk education',
-    'дополнительная информация',
-    'дополнительное описание',
-]
-
-ROLE_ORDER = {
-    "section_title": 0,
-    "slide_title": 0,
-    "slide_subtitle": 1,
-    "bullet": 2,
-    "caption": 3,
-    "image": 4,
-    "chart": 5,
-    "table": 6,
-}
-
 
 def layout_slides(plan: dict, ds: dict, mode: str = "dense") -> dict:
     """Раскладывает слайды по плейсхолдерам."""
@@ -53,21 +26,8 @@ def layout_slides(plan: dict, ds: dict, mode: str = "dense") -> dict:
     default_x = safe_area.get("left_emu", 457200)
     default_y = safe_area.get("top_emu", 685800)
     slide_width = ds["meta"]["slide_size"]["width_emu"]
-    slide_height = ds["meta"]["slide_size"]["height_emu"]
     default_w = slide_width - default_x - safe_area.get("right_emu", 457200)
     default_h = int(1143000 * padding_multiplier)
-
-    # Определяем тёмный шаблон по имени файла
-    source = ds["meta"].get("source_file", "").lower()
-    is_dark_bg = "vk_tech" in source or "vk_workspace" in source
-
-    # Цвет текста
-    if is_dark_bg:
-        text_color = "#FFFFFF"
-    else:
-        text_color = ds["palette"]["colors"].get(
-            "text_primary", {"hex": "#1A1A1A"}
-        )["hex"]
 
     for i, spec in enumerate(plan["slides"], start=1):
         pattern_id = spec["pattern_id"]
@@ -75,55 +35,24 @@ def layout_slides(plan: dict, ds: dict, mode: str = "dense") -> dict:
 
         elements = []
         y_offset = default_y
-        seen_roles = set()
-
-        pattern_has_body = any(
-            ph["role"] == "bullet"
-            for ph in pattern.get("placeholders", [])
-        )
-
-        chart_ph = next(
-            (ph for ph in pattern.get("placeholders", [])
-             if ph["role"] == "chart"),
-            None,
-        )
-        table_ph = next(
-            (ph for ph in pattern.get("placeholders", [])
-             if ph["role"] == "table"),
-            None,
-        )
 
         for ph in pattern.get("placeholders", []):
             role = ph["role"]
-            name = (ph.get("name") or "").lower()
 
-            if any(kw in name for kw in SKIP_PLACEHOLDER_KEYWORDS):
-                continue
             if role in ("date", "footer", "slide_number"):
                 continue
-            if role in ("chart", "table"):
+
+            # Не дублируем bullet — в шаблоне их бывает несколько
+            if role == "bullet" and any(e["role"] == "bullet" for e in elements):
                 continue
-            if role in seen_roles:
-                continue
-            seen_roles.add(role)
 
             if role in ("slide_title", "section_title"):
                 text = spec.get("title", "")
             elif role == "slide_subtitle":
                 text = spec.get("subtitle", "")
             elif role == "bullet":
-                if "bullets" in spec:
-                    bullets = spec.get("bullets", [])[:max_bullets]
-                    text = "\n".join(bullets)
-                elif "content" in spec:
-                    lines = [
-                        line.strip()
-                        for line in spec["content"].split("\n")
-                        if line.strip()
-                    ]
-                    text = "\n".join(lines[:max_bullets])
-                else:
-                    text = ""
+                bullets = spec.get("bullets", [])[:max_bullets]
+                text = "\n".join(bullets)
             elif role == "caption":
                 text = spec.get("caption", "")
             else:
@@ -163,78 +92,47 @@ def layout_slides(plan: dict, ds: dict, mode: str = "dense") -> dict:
                 "element_id": f"{role}_{i}",
                 "type": "text",
                 "role": role,
-                "placeholder_idx": ph.get("idx") if ph.get("is_placeholder", True) else None,
+                "placeholder_idx": ph.get("idx"),
                 "bbox": bbox,
                 "text": text,
                 "style": {
                     "font": font,
                     "size_pt": int(scale["size_pt"] * font_multiplier),
-                    "color": text_color,
                     "weight": scale.get("weight", 400),
                 },
             })
 
-        # Fallback
-        has_bullet = any(el["role"] == "bullet" for el in elements)
-        if not has_bullet and not pattern_has_body and spec.get("bullets"):
-            text = "\n".join(spec["bullets"][:max_bullets])
-            elements.append({
-                "element_id": f"bullet_fallback_{i}",
-                "type": "text",
-                "role": "bullet",
-                "placeholder_idx": None,
-                "bbox": {
-                    "x_emu": default_x,
-                    "y_emu": default_y + 1143000,
-                    "w_emu": default_w,
-                    "h_emu": 3429000,
-                },
-                "text": text,
-                "style": {
-                    "font": ds["typography"]["fonts"].get("primary", {}).get("family", "Arial"),
-                    "size_pt": 18,
-                    "color": text_color,
-                    "weight": 400,
-                },
-            })
-
-        # Убираем текстовые элементы у chart/table
-        if spec.get("chart") or spec.get("table"):
-            elements = [el for el in elements if el["type"] != "text"]
-
-        elements.sort(key=lambda e: ROLE_ORDER.get(e["role"], 99))
-
-        # CHART
+        # График
         if spec.get("chart"):
-            chart_bbox = {
-                "x_emu": int(slide_width * 0.02),
-                "y_emu": int(slide_height * 0.25),
-                "w_emu": int(slide_width * 0.45),
-                "h_emu": int(slide_height * 0.60),
-            }
             elements.append({
                 "element_id": f"chart_{i}",
                 "type": "chart",
                 "role": "chart",
-                "bbox": chart_bbox,
+                "bbox": {
+                    "x_emu": default_x,
+                    "y_emu": y_offset,
+                    "w_emu": default_w,
+                    "h_emu": 3429000,
+                },
                 "spec": spec["chart"],
             })
+            y_offset += 3429000 + 228600
 
-        # TABLE
+        # Таблица
         if spec.get("table"):
-            table_bbox = {
-                "x_emu": int(slide_width * 0.05),
-                "y_emu": int(slide_height * 0.25),
-                "w_emu": int(slide_width * 0.90),
-                "h_emu": int(slide_height * 0.55),
-            }
             elements.append({
                 "element_id": f"table_{i}",
                 "type": "table",
                 "role": "table",
-                "bbox": table_bbox,
+                "bbox": {
+                    "x_emu": default_x,
+                    "y_emu": y_offset,
+                    "w_emu": default_w,
+                    "h_emu": 2286000,
+                },
                 "spec": spec["table"],
             })
+            y_offset += 2286000 + 228600
 
         slides.append({
             "slide_id": i,
