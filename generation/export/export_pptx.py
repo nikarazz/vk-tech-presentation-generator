@@ -6,9 +6,7 @@
 3. Для каждого слайда из pres — находим шаблонный.
 4. Копируем XML шейпов из шаблонного слайда.
 5. Удаляем сервисные/пустые placeholder'ы.
-6. Заполняем контент. Цвет текста — по шаблону:
-   - vk_tech / vk_workspace — БЕЛЫЙ (тёмные)
-   - vk_education — ТЁМНЫЙ (светлый)
+6. Заполняем контент. Цвет — по шаблону. Многострочный текст — через параграфы.
 """
 from copy import deepcopy
 
@@ -29,11 +27,46 @@ SERVICE_TEXTS = {
 
 
 def _pick_text_color(ds: dict) -> tuple:
-    """Цвет текста по шаблону: тёмные → белый, светлые → тёмный."""
+    """Цвет текста по шаблону: тёмные → белый, светлые → тёмный.
+
+    Нормализуем имя: пробелы/дефисы → подчёркивания.
+    Это позволяет распознавать 'VK Tech шаблон.pptx', 'vk_tech.pptx' и т.п.
+    """
     source = (ds.get("meta", {}).get("source_file") or "").lower()
-    if "vk_tech" in source or "vk_workspace" in source:
+    src = source.replace(" ", "_").replace("-", "_")
+
+    # Тёмные шаблоны → белый
+    if "tech" in src or "workspace" in src:
         return (0xFF, 0xFF, 0xFF)
-    return (0x1A, 0x1A, 0x1A)
+    # Светлые шаблоны → тёмный
+    if "education" in src:
+        return (0x1A, 0x1A, 0x1A)
+
+    # Fallback — белый (VK-стиль)
+    return (0xFF, 0xFF, 0xFF)
+
+
+def _set_text_multiline(text_frame, text: str):
+    """Разбивает текст на параграфы по \\n.
+
+    Решает проблему, когда text_frame.text = "a\\nb" PowerPoint
+    рендерит как одну строку (текст «слипается»).
+    """
+    try:
+        text_frame.clear()
+    except Exception:
+        pass
+
+    lines = [ln for ln in text.split("\n") if ln.strip()]
+    if not lines:
+        return
+
+    for j, line in enumerate(lines):
+        if j == 0:
+            p = text_frame.paragraphs[0]
+        else:
+            p = text_frame.add_paragraph()
+        p.text = line
 
 
 def _apply_style_to_frame(text_frame, style: dict, default_rgb=(0xFF, 0xFF, 0xFF)):
@@ -177,15 +210,14 @@ def export_pptx(pres: dict, ds: dict, template_path: str, output_path: str) -> N
                     continue
 
                 if role in ("slide_title", "section_title") and title_shape is not None:
-                    title_shape.text_frame.text = text
+                    _set_text_multiline(title_shape.text_frame, text)
                     _apply_style_to_frame(title_shape.text_frame, style, default_rgb)
 
                 elif role in ("bullet", "slide_subtitle", "body"):
                     if body_shape is not None:
-                        body_shape.text_frame.text = text
+                        _set_text_multiline(body_shape.text_frame, text)
                         _apply_style_to_frame(body_shape.text_frame, style, default_rgb)
                     else:
-                        # Fallback: TextBox, если в шаблоне нет body-placeholder'а
                         bbox = el.get("bbox")
                         if bbox:
                             txBox = new_slide.shapes.add_textbox(
@@ -194,7 +226,7 @@ def export_pptx(pres: dict, ds: dict, template_path: str, output_path: str) -> N
                             )
                             tf = txBox.text_frame
                             tf.word_wrap = True
-                            tf.text = text
+                            _set_text_multiline(tf, text)
                             _apply_style_to_frame(tf, style, default_rgb)
 
                 else:
@@ -207,7 +239,7 @@ def export_pptx(pres: dict, ds: dict, template_path: str, output_path: str) -> N
                     )
                     tf = txBox.text_frame
                     tf.word_wrap = True
-                    tf.text = text
+                    _set_text_multiline(tf, text)
                     _apply_style_to_frame(tf, style, default_rgb)
 
             elif el["type"] == "chart":
