@@ -31,3 +31,6 @@ output/
 AGENTS.md
 CLAUDE.md
 run.log
+feat/vk-clean-redesign
+*.log
+main
