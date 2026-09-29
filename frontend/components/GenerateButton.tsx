@@ -1,5 +1,8 @@
 "use client";
 
+import { motion } from "framer-motion";
+import { Sparkles, Loader2 } from "lucide-react";
+
 interface Props {
   onClick: () => void;
   disabled: boolean;
@@ -8,12 +11,29 @@ interface Props {
 
 export function GenerateButton({ onClick, disabled, loading }: Props) {
   return (
-    <button
+    <motion.button
+      whileHover={!disabled && !loading ? { scale: 1.01, y: -2 } : {}}
+      whileTap={!disabled && !loading ? { scale: 0.99 } : {}}
       onClick={onClick}
       disabled={disabled || loading}
-      className="w-full py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50"
+      className="btn-primary w-full text-base py-4 relative overflow-hidden"
     >
-      {loading ? "Генерация..." : "Сгенерировать презентацию"}
-    </button>
+      {loading ? (
+        <>
+          <Loader2 size={20} className="animate-spin" />
+          Генерация...
+        </>
+      ) : (
+        <>
+          <motion.span
+            animate={{ rotate: [0, 10, -10, 0] }}
+            transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
+          >
+            <Sparkles size={20} />
+          </motion.span>
+          Сгенерировать презентацию
+        </>
+      )}
+    </motion.button>
   );
 }
