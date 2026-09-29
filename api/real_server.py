@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from parser.parse_template import parse_template
-from generation.plan_content import plan_content_stub
+from generation.plan_content import plan_content
 from generation.variants import generate_variants
 from generation.export.export_pptx import export_pptx
 from generation.export.export_pdf import export_pdf
@@ -46,8 +46,8 @@ class ContentPack(BaseModel):
 
 
 class GenerateRequest(BaseModel):
-    template_id: str
-    content_id: str
+    template_id: str | None = None
+    content_id: str | None = None
     brief: str
     variants: int = 3
 
@@ -68,7 +68,6 @@ async def upload_template(file: UploadFile = File(...)):
     template_id = str(uuid.uuid4())[:8]
     original_name = file.filename or "template.pptx"
 
-    # Сохраняем с оригинальным именем — чтобы _pick_text_color видел шаблон
     safe_name = (
         original_name
         .replace(" ", "_")
@@ -85,7 +84,6 @@ async def upload_template(file: UploadFile = File(...)):
         traceback.print_exc()
         raise HTTPException(400, f"Parse failed: {e}")
 
-    # ★ Прокидываем ОРИГИНАЛЬНОЕ имя в meta
     ds["meta"]["source_file"] = original_name
     ds["meta"]["original_filename"] = original_name
 
@@ -116,9 +114,18 @@ async def upload_content(payload: ContentPack):
 
 @app.post("/api/generate")
 async def generate(req: GenerateRequest, background: BackgroundTasks):
-    if req.template_id not in templates_db:
-        raise HTTPException(404, "Template not found")
-    if req.content_id not in content_db:
+    # Шаблон опционален
+    if req.template_id:
+        if req.template_id not in templates_db:
+            raise HTTPException(404, "Template not found")
+    else:
+        # Дефолтный шаблон — первый в базе
+        if templates_db:
+            req.template_id = list(templates_db.keys())[0]
+        else:
+            raise HTTPException(400, "No template available. Upload at least one template first.")
+
+    if req.content_id and req.content_id not in content_db:
         raise HTTPException(404, "Content not found")
 
     job_id = str(uuid.uuid4())[:8]
@@ -132,9 +139,15 @@ async def generate(req: GenerateRequest, background: BackgroundTasks):
         "error": None,
     }
 
-    background.add_task(_run_job, job_id, req.template_id, req.brief)
+    background.add_task(
+        _run_job,
+        job_id,
+        req.template_id,
+        req.brief,
+        req.content_id,
+    )
     return {"job_id": job_id, "status": "processing", "estimated_seconds": 60}
-
+      
 
 @app.get("/api/jobs/{job_id}")
 async def job_status(job_id: str):
@@ -156,16 +169,27 @@ async def models():
     return {"models": ["qwen3.8-flash"], "default": "qwen3.8-flash"}
 
 
-def _run_job(job_id: str, template_id: str, brief: str):
+def _run_job(
+    job_id: str,
+    template_id: str,
+    brief: str,
+    content_id: str | None = None,
+):
+    """Запускает пайплайн генерации."""
     job = jobs_db[job_id]
     try:
         job.update(progress=10, stage="parsing", message="Parsing template...")
         template_path = templates_db[template_id]["path"]
         ds = templates_db[template_id]["ds"]
-        # ★ source_file уже установлен в оригинальное имя
 
         job.update(progress=30, stage="planning", message="Planning content...")
-        plan = plan_content_stub(brief, {}, ds)
+        if content_id:
+            content_pack = content_db.get(content_id, {})
+        else:
+            content_pack = {}
+
+        plan = plan_content(brief, content_pack, ds)
+        print(f"[job {job_id}] Planned {len(plan.get('slides', []))} slides")
 
         job.update(progress=50, stage="layout", message="Layout slides...")
         variants = generate_variants(plan, ds)

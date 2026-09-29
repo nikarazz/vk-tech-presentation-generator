@@ -1,19 +1,9 @@
-"""Экспорт Presentation → .pptx через копирование шаблонных слайдов.
-
-Подход:
-1. Открываем шаблон (.pptx с контентом).
-2. Собираем шаблонные слайды по имени layout.
-3. Для каждого слайда из pres — находим шаблонный.
-4. Копируем XML шейпов из шаблонного слайда.
-5. Удаляем сервисные/пустые placeholder'ы.
-6. Заполняем контент. Цвет — по шаблону. Многострочный текст — через параграфы.
-"""
+"""Экспорт Presentation → .pptx через копирование шаблонных слайдов."""
 from copy import deepcopy
 
 from pptx import Presentation as PptxPresentation
 from pptx.util import Emu, Pt
 from pptx.dml.color import RGBColor
-from pptx.oxml.ns import qn
 
 from generation.chart_builder import build_chart
 from generation.table_builder import build_table
@@ -22,36 +12,24 @@ from generation.table_builder import build_table
 SERVICE_TEXTS = {
     "текст слайда", "заголовок", "заголовок слайда",
     "text slide", "click to edit", "click to add text",
-    "введите текст", "текст", "подзаголовок",
+    "введите текст", "подзаголовок",
 }
 
 
 def _pick_text_color(ds: dict) -> tuple:
-    """Цвет текста по шаблону: тёмные → белый, светлые → тёмный.
-
-    Нормализуем имя: пробелы/дефисы → подчёркивания.
-    Это позволяет распознавать 'VK Tech шаблон.pptx', 'vk_tech.pptx' и т.п.
-    """
+    """Тёмные шаблоны → белый текст, светлые → тёмный."""
     source = (ds.get("meta", {}).get("source_file") or "").lower()
     src = source.replace(" ", "_").replace("-", "_")
 
-    # Тёмные шаблоны → белый
     if "tech" in src or "workspace" in src:
         return (0xFF, 0xFF, 0xFF)
-    # Светлые шаблоны → тёмный
     if "education" in src:
         return (0x1A, 0x1A, 0x1A)
-
-    # Fallback — белый (VK-стиль)
     return (0xFF, 0xFF, 0xFF)
 
 
 def _set_text_multiline(text_frame, text: str):
-    """Разбивает текст на параграфы по \\n.
-
-    Решает проблему, когда text_frame.text = "a\\nb" PowerPoint
-    рендерит как одну строку (текст «слипается»).
-    """
+    """Разбивает текст на параграфы по \\n."""
     try:
         text_frame.clear()
     except Exception:
@@ -93,6 +71,7 @@ def _apply_style_to_frame(text_frame, style: dict, default_rgb=(0xFF, 0xFF, 0xFF
 
 
 def _classify_shape(shape) -> str:
+    """Определяет роль шейпа: title, body или other."""
     name = shape.name.lower()
     top = shape.top or 0
     height = shape.height or 0
@@ -110,6 +89,7 @@ def _classify_shape(shape) -> str:
 
 
 def _collect_text_shapes(slide) -> list:
+    """Собирает шейпы с текстом."""
     shapes = []
     for shape in slide.shapes:
         try:
@@ -121,14 +101,17 @@ def _collect_text_shapes(slide) -> list:
 
 
 def _copy_shapes(template_slide, new_slide):
+    """Копирует XML шейпов из шаблонного слайда в новый."""
     template_spTree = template_slide.shapes._spTree
     new_spTree = new_slide.shapes._spTree
 
+    # Удаляем всё лишнее с нового слайда
     for sp in list(new_spTree):
         tag = sp.tag.split('}')[-1]
         if tag in ('sp', 'pic', 'graphicFrame', 'grpSp', 'cxnSp'):
             new_spTree.remove(sp)
 
+    # Копируем шейпы из шаблона
     for sp in list(template_spTree):
         tag = sp.tag.split('}')[-1]
         if tag in ('sp', 'pic', 'graphicFrame', 'grpSp', 'cxnSp'):
@@ -136,7 +119,7 @@ def _copy_shapes(template_slide, new_slide):
 
 
 def _remove_service_shapes(slide):
-    """Удаляет placeholder'ы, не заполненные нашим контентом."""
+    """Удаляет placeholder'ы с шаблонным текстом."""
     for shape in list(slide.shapes):
         try:
             if not shape.is_placeholder:
@@ -155,17 +138,20 @@ def export_pptx(pres: dict, ds: dict, template_path: str, output_path: str) -> N
     prs = PptxPresentation(template_path)
     default_rgb = _pick_text_color(ds)
 
+    # Карта: имя layout → шаблонный слайд
     template_by_layout = {}
     for slide in prs.slides:
         layout_name = slide.slide_layout.name
         if layout_name not in template_by_layout:
             template_by_layout[layout_name] = slide
 
+    # Карта: slideLayoutN.xml → имя layout
     layout_names = {}
     for layout in prs.slide_layouts:
         ref = str(layout.part.partname).split("/")[-1]
         layout_names[ref] = layout.name
 
+    # Удаляем все существующие слайды
     xml_slides = prs.slides._sldIdLst
     for sld in list(xml_slides):
         rId = sld.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id')
@@ -176,13 +162,16 @@ def export_pptx(pres: dict, ds: dict, template_path: str, output_path: str) -> N
         layout_ref = slide_data.get("layout_ref", "")
         layout_name = layout_names.get(layout_ref, "")
 
+        # Находим шаблонный слайд
         template_slide = template_by_layout.get(layout_name)
         if template_slide is None:
             template_slide = list(template_by_layout.values())[0]
 
+        # Создаём новый слайд и копируем шейпы
         new_slide = prs.slides.add_slide(template_slide.slide_layout)
         _copy_shapes(template_slide, new_slide)
 
+        # Собираем текстовые шейпы
         text_shapes = _collect_text_shapes(new_slide)
 
         title_shape = None
@@ -194,12 +183,14 @@ def export_pptx(pres: dict, ds: dict, template_path: str, output_path: str) -> N
             elif role == "body" and body_shape is None:
                 body_shape = shape
 
+        # Очищаем текст
         for shape in text_shapes:
             try:
                 shape.text_frame.text = ""
             except Exception:
                 pass
 
+        # Заполняем контент
         for el in slide_data["elements"]:
             if el["type"] == "text":
                 role = el.get("role")
@@ -213,21 +204,9 @@ def export_pptx(pres: dict, ds: dict, template_path: str, output_path: str) -> N
                     _set_text_multiline(title_shape.text_frame, text)
                     _apply_style_to_frame(title_shape.text_frame, style, default_rgb)
 
-                elif role in ("bullet", "slide_subtitle", "body"):
-                    if body_shape is not None:
-                        _set_text_multiline(body_shape.text_frame, text)
-                        _apply_style_to_frame(body_shape.text_frame, style, default_rgb)
-                    else:
-                        bbox = el.get("bbox")
-                        if bbox:
-                            txBox = new_slide.shapes.add_textbox(
-                                Emu(int(bbox["x_emu"])), Emu(int(bbox["y_emu"])),
-                                Emu(int(bbox["w_emu"])), Emu(int(bbox["h_emu"])),
-                            )
-                            tf = txBox.text_frame
-                            tf.word_wrap = True
-                            _set_text_multiline(tf, text)
-                            _apply_style_to_frame(tf, style, default_rgb)
+                elif role in ("bullet", "slide_subtitle", "body") and body_shape is not None:
+                    _set_text_multiline(body_shape.text_frame, text)
+                    _apply_style_to_frame(body_shape.text_frame, style, default_rgb)
 
                 else:
                     bbox = el.get("bbox")

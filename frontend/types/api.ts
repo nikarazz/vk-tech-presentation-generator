@@ -11,8 +11,8 @@ export interface ContentResponse {
 }
 
 export interface GenerateRequest {
-  template_id: string;
-  content_id: string;
+  template_id?: string;
+  content_id?: string;
   brief: string;
   variants: number;
 }

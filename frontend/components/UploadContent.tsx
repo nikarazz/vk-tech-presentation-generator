@@ -28,7 +28,7 @@ export function UploadContent({ onUpload }: Props) {
         onChange={(e) => setText(e.target.value)}
         rows={6}
         className="w-full border rounded-lg p-3 font-mono text-sm"
-        placeholder='{"product": "...", "benefits": [...]}'
+        placeholder='{"product": "...", "benefits": [...]} или {}'
       />
       {error && <p className="text-red-500 text-sm mt-1">{error}</p>}
       <button

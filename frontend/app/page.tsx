@@ -36,16 +36,15 @@ export default function Home() {
     }
   }
 
-  async function handleGenerate() {
-    if (!templateId || !contentId || !brief) {
-      toast.error("Заполни все поля");
+  if (!brief) {
+      toast.error("Введите бриф");
       return;
     }
     setLoading(true);
     try {
       const res = await startGeneration({
-        template_id: templateId,
-        content_id: contentId,
+        template_id: templateId || undefined,
+        content_id: contentId || undefined,
         brief,
         variants: 3,
       });
@@ -68,7 +67,7 @@ export default function Home() {
         <BriefInput value={brief} onChange={setBrief} />
         <GenerateButton
           onClick={handleGenerate}
-          disabled={!templateId || !contentId || !brief}
+          disabled={!brief}
           loading={loading}
         />
       </div>
