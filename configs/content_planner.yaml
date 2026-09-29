@@ -1,0 +1,23 @@
+name: content_planner
+version: v1
+description: "Генерация структуры презентации по брифу и контент-пакету"
+
+model:
+  name: qwen3.8-flash
+  temperature: 0.3
+  max_tokens: 4000
+
+prompt_file: prompts/content_planner_v1.md
+
+input:
+  - brief
+  - content_pack
+  - design_system
+
+output:
+  type: SlidePlan
+
+constraints:
+  min_slides: 8
+  max_slides: 12
+  language: ru

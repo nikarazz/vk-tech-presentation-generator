@@ -1,27 +1,23 @@
 """Клиент для работы с LLM через OpenAI-совместимый API."""
 
 import os
+import json
 import time
-from openai import OpenAI
+from pathlib import Path
+
+import requests
 from dotenv import load_dotenv
 
-load_dotenv()
+# Ищем .env в корне проекта (на 2 уровня выше shared/)
+_env_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(_env_path)
 
-_client: OpenAI | None = None
 
-
-def get_client() -> OpenAI:
-    """Возвращает singleton-клиент OpenAI."""
-    global _client
-    if _client is None:
-        base_url = os.getenv("LLM_BASE_URL")
-        api_key = os.getenv("LLM_API_KEY")
-        if not base_url or not api_key:
-            raise RuntimeError(
-                "LLM_BASE_URL и LLM_API_KEY должны быть заданы в .env"
-            )
-        _client = OpenAI(base_url=base_url, api_key=api_key)
-    return _client
+def _get_proxies():
+    proxy = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY")
+    if proxy:
+        return {"http": proxy, "https": proxy}
+    return None
 
 
 def chat(
@@ -33,53 +29,67 @@ def chat(
     use_cache: bool = True,
     verbose: bool = False,
 ) -> str:
-    """
-    Отправляет запрос к LLM и возвращает текст ответа.
+    """Отправляет запрос к LLM и возвращает текст ответа."""
 
-    Args:
-        messages: список сообщений [{"role": "user", "content": "..."}]
-        model: имя модели (по умолчанию из .env)
-        temperature: креативность (0.0 — детерминированно)
-        max_tokens: максимум токенов в ответе
-        response_format: {"type": "json_object"} для JSON-ответа
-        use_cache: использовать файловый кэш
-        verbose: печатать информацию о кэше и времени
-
-    Returns:
-        Текст ответа.
-    """
-    client = get_client()
+    base_url = os.getenv("LLM_API_URL")
+    api_key = os.getenv("LLM_API_KEY")
     model = model or os.getenv("LLM_MODEL")
 
-    if use_cache:
-        from shared.llm_cache import get as cache_get
-        cached = cache_get(messages, model, temperature, max_tokens)
-        if cached is not None:
-            if verbose:
-                print(f"[cache] hit: {model}")
-            return cached
+    if not base_url or not api_key:
+        raise RuntimeError(
+            f"LLM_API_URL и LLM_API_KEY должны быть в .env. "
+            f"Искали в: {_env_path}. Существует: {_env_path.exists()}"
+        )
 
-    kwargs = {
+    if use_cache:
+        try:
+            from shared.llm_cache import get as cache_get
+            cached = cache_get(messages, model, temperature, max_tokens)
+            if cached is not None:
+                if verbose:
+                    print(f"[cache] hit: {model}")
+                return cached
+        except ImportError:
+            pass
+
+    body = {
         "model": model,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
     if response_format:
-        kwargs["response_format"] = response_format
+        body["response_format"] = response_format
+
+    url = f"{base_url.rstrip('/')}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
 
     t0 = time.time()
-    response = client.chat.completions.create(**kwargs)
+    response = requests.post(
+        url,
+        headers=headers,
+        json=body,
+        proxies=_get_proxies(),
+        timeout=60,
+    )
     elapsed = time.time() - t0
 
-    text = response.choices[0].message.content
-
     if verbose:
-        print(f"[llm] {model} — {elapsed:.2f} сек")
+        print(f"[llm] {model} — {elapsed:.2f} сек, status={response.status_code}")
+
+    response.raise_for_status()
+    data = response.json()
+    text = data["choices"][0]["message"]["content"]
 
     if use_cache:
-        from shared.llm_cache import set as cache_set
-        cache_set(messages, model, temperature, max_tokens, text)
+        try:
+            from shared.llm_cache import set as cache_set
+            cache_set(messages, model, temperature, max_tokens, text)
+        except ImportError:
+            pass
 
     return text
 
@@ -91,6 +101,7 @@ def chat_json(
     max_tokens: int = 4000,
     use_cache: bool = True,
     verbose: bool = False,
+    max_retries=5,
 ) -> str:
     """Отправляет запрос и просит JSON-ответ."""
     return chat(

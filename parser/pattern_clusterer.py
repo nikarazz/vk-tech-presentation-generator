@@ -45,38 +45,70 @@ def cluster_patterns(layouts: list[dict], slides: list[dict]) -> dict:
 
 
 def _layout_to_base_id(layout: dict) -> str:
-    """Возвращает базовое семантическое имя для layout."""
+    """Возвращает семантическое имя паттерна по имени layout'а."""
     layout_type = layout.get("type", "obj")
-    name = layout.get("name", "").lower().replace(" ", "_")
+    name = layout.get("name", "").lower()
 
-    if "blank" in name:
-        return "blank"
-    if "section" in name or layout_type == "secHead":
-        return "section"
-    if "two_content" in name or "two content" in name:
-        return "content_two_column"
-    if "comparison" in name:
-        return "comparison"
-    if "content_with_caption" in name or "content with caption" in name:
-        return "content_with_caption"
-    if "picture_with_caption" in name or "picture with caption" in name:
-        return "picture_with_caption"
-    if "title_only" in name or "title only" in name:
-        return "title_only"
-    if "vertical_title" in name or "vertical title" in name:
-        return "vertical_title"
-    if "title_slide" in name or "title slide" in name:
+    # Русские ключевые слова
+    if "титул" in name:
         return "title"
-    if "title_and_content" in name or "title and content" in name:
+    if "команда" in name:
+        return "team"
+    if "содержание" in name:
         return "content_bullets"
-    if "chart" in name:
+    if "описание" in name or "объект" in name:
+        return "content_bullets"
+    if "пункт" in name:
+        return "content_bullets"
+    if "статистик" in name or "график" in name or "диаграмм" in name:
+        return "data_chart"
+    if "таблиц" in name:
+        return "data_table"
+    if "стади" in name or "этап" in name:
+        return "stages"
+    if "проблем" in name and "решен" in name:
+        return "problem_solution"
+    if "демо" in name:
+        return "demo"
+    if "фото" in name or "рисунок" in name or "изображен" in name:
+        return "image_full"
+    if "сравнен" in name:
+        return "comparison"
+    if "пустой" in name:
+        return "blank"
+
+    # Английские ключевые слова
+    if "title" in name:
+        return "title"
+    if "team" in name:
+        return "team"
+    if "content" in name:
+        return "content_bullets"
+    if "chart" in name or "stat" in name:
         return "data_chart"
     if "table" in name:
         return "data_table"
+    if "demo" in name:
+        return "demo"
     if "image" in name or "picture" in name:
         return "image_full"
-    if "closing" in name or "thank" in name:
-        return "closing"
+    if "blank" in name:
+        return "blank"
+
+    # Fallback по типу
+    if layout_type == "title":
+        return "title"
+    if layout_type == "secHead":
+        return "section"
+    if layout_type == "blank":
+        return "blank"
+
+    # Fallback по структуре плейсхолдеров
+    roles = [ph.get("role") for ph in layout.get("placeholders", [])]
+    if "slide_title" in roles and "bullet" in roles:
+        return "content_bullets"
+    if "slide_title" in roles:
+        return "title_only"
 
     return "layout"
 
